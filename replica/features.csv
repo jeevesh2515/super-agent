@@ -1,0 +1,50 @@
+feature,area,priority,original,clone,notes
+Start a voice session with a local token,voice,must,yes,yes,PH-01
+Mute that stops microphone upload,voice,must,yes,yes,PH-01
+Talk over the reply to interrupt it,voice,must,yes,partial,Works on real words; no minimum duration or resume after a false interruption
+Fully local speech and model with no cloud,voice,must,no,partial,PR 36 open; no reference offers this with tools
+Sentence-by-sentence speech while the model still writes,voice,must,yes,partial,In PR 36; Pipecat documents it
+End-of-turn model instead of fixed silence,voice,must,yes,no,Pipecat Smart Turn v3 BSD-2
+Server-side voice detection instead of a volume threshold,voice,must,yes,no,Silero VAD; licence to confirm
+Natural neural voice,voice,must,yes,no,Kokoro works in spike A4; its package depends on GPL-3.0 code; needs both maintainers
+First reply audio within about one second,voice,must,yes,no,Measured 2.0 to 2.2 s plus 0.7 s endpointing
+Speculative generation started when speech stops,voice,should,yes,no,LiveKit and Pipecat; competes with whisper for the GPU (guess)
+Keep the model and speech engines warm,voice,should,no,no,Not documented by any reference; Ollama keep_alive is a guess
+Faster speech-to-text for English,voice,should,yes,no,Moonshine or Parakeet; whisper-server to keep audio off disk
+Short acknowledgement clips for slow work,voice,should,yes,no,LiveKit filler audio
+Context keeps only what was actually heard after an interruption,voice,should,yes,partial,Interrupted replies are dropped whole today
+Visible listening thinking speaking interrupted states,voice,must,yes,partial,No thinking state yet
+Hotkey mute,voice,should,yes,no,Assist hardware mute switch
+Local wake word,voice,could,yes,no,PH-06; openWakeWord models are non-commercial
+Beep instead of speech for trivial confirmations,voice,could,yes,no,Assist
+Hand a job to a background worker and keep talking,tasks,must,yes,no,PH-02; Pipecat LLMWithBackend and Gemini NON_BLOCKING
+Job list with state step and age,tasks,must,yes,no,PH-02
+Outcome-first job summary with a log on demand,tasks,must,yes,no,PH-02
+Steer a named job mid-run,tasks,must,yes,no,PH-03
+Stop one job or all jobs by voice and button,tasks,must,yes,no,PH-03
+Speak a finished job's result at a turn boundary,tasks,should,yes,no,PH-02 and PH-03
+Clarifying question before a vague job starts,tasks,should,yes,no,PH-04
+Resume after restart without blind replay,tasks,should,yes,no,PH-03
+Recurring scheduled jobs,tasks,could,yes,no,Dispatch; not on the roadmap
+Capability tiers enforced outside the model,safety,must,partial,no,DEC-18; track A
+Approval card with exact parameters and an irreversibility warning,safety,must,yes,no,Open Interpreter desktop; tier T3
+Approve on the device only and never by voice,safety,must,no,no,REQ-09; no reference documents this
+Default deny until something is exposed,safety,must,yes,no,Assist expose list; tier T1 design
+Per-app and per-folder allow lists,safety,should,yes,no,Cowork
+Email and web content treated as data,safety,must,partial,no,AGENTS.md section 5
+Append-only searchable action log,safety,must,no,no,REQ-05
+Owner profile file you can read and edit,memory,should,yes,no,Leon OWNER.md; needs a retention decision under REQ-14
+View edit and delete any memory,memory,must,yes,no,Dispatch
+Layered memory with expiry,memory,could,yes,no,Leon
+Per-task no-memory switch,memory,could,yes,no,Cowork
+One-command install and a first-run check,setup,must,yes,partial,Windows launcher exists; no Mac one
+Setup wizard that tests mic speaker and model,setup,should,yes,no,Assist
+Honest host asleep or unreachable status,setup,should,partial,no,REQ-18
+Phone as a satellite paired by QR,devices,should,yes,no,01 and Assist; not on the roadmap
+Revocable device credentials,devices,must,no,partial,R-01.5 design covers revocation
+One device answers when several hear you,devices,could,partial,no,Assist is weak here
+Hosted frontier model quality,voice,skip,yes,no,Cannot be cloned locally
+Native speech-to-speech,voice,skip,yes,no,Does not fit 16 GB next to a language model
+Cloud sessions that run with the laptop closed,tasks,skip,yes,no,Local-first means the Mac must be awake
+Dedicated microphone hardware,devices,skip,yes,no,Hardware
+Paid cloud connectors,tasks,skip,yes,no,$0 cap
