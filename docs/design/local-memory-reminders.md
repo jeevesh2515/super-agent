@@ -6,7 +6,7 @@
 | Tier | T2 under [DEC-18](../../descisions.md#dec-18): reversible writes to the assistant's own store, logged, with an undo path |
 | Approval | [Out-of-order record](../approvals/local-memory-exception.md) |
 | Reference | Roamies design reference, section 1 (ideas only), in [PR 44](https://github.com/abhishek3059/super-agent/pull/44) |
-| Code | `apps/api/src/super_agent_voice/memory.py`, wired in `local_adapter.py` |
+| Code | `apps/api/src/super_agent_voice/memory.py`, `memory_screen.py`, wired in `local_adapter.py` and `app.py`; console panel in `apps/web/src/app` |
 
 ## What the assistant can do
 
@@ -63,31 +63,90 @@ gets none. "What do you remember about me" gets the 5 newest facts.
     word ("remember", "remind", "forget" and a few like them). The small model
     otherwise saved things nobody asked for.
 
-## Next step: recall that does not forget (proposal, not built)
+## Recall
 
-Today recall is word overlap, so "my sibling" does not find "my sister is
-Asha". The brain design in PR #40 (`docs/design/brain/data-layer.md`, section
-5) already compares the options; this note only says what fits the T2 store.
-The store is capped at 150 facts, so heavy machinery is not needed:
+Recall uses SQLite FTS5 from the standard library `sqlite3`, with the
+`porter unicode61` tokenizer, so "sisters" finds "my sister is Asha". No new
+dependency and no embeddings. The store is capped at 150 facts, so the index is
+built from the live rows in a throwaway in-memory table on each search. It
+cannot go stale: an edit, a forget or an undo shows on the next search, and a
+forgotten fact is never in it. Ranking is BM25, ties newest first.
 
-1. **First, no new dependency.** Add SQLite FTS5 keyword search over facts
-   (the same BM25 ranking the brain design lists as option a). Check that the
-   Python build has FTS5 before relying on it.
-2. **Then, if paraphrases still miss:** store one vector per fact, made by a
-   small local embedding model through Ollama (`nomic-embed-text`, Apache-2.0,
-   274 MB), and rank by cosine similarity in plain Python. At 150 vectors this
-   takes milliseconds. Keep FTS5 too and merge the two rankings, because
-   embeddings alone miss exact names and numbers. Delete a vector with its
-   fact, and never compare vectors from different models.
-3. **Not now:** `sqlite-vec` (a native extension in the trust boundary, and
-   pre-1.0) and any hosted vector database. Both break the local-only rule
-   for little gain at this size.
+- The query is cut into plain words of 3 or more characters, each one quoted
+  and joined with OR, so quotes, punctuation and the words AND, OR, NOT and
+  NEAR never reach the FTS5 query syntax. At most 20 words are used.
+- At startup `memory.FTS5` records whether this SQLite has FTS5. If not,
+  recall falls back to the earlier word-overlap match.
+- Stored text is only ever matched against, never run: a fact that looks like
+  SQL, an FTS query or an instruction stays a line of data.
+- Still a proposal, not built: a small local embedding model for paraphrases
+  ("my sibling" for "my sister"), merged with FTS5. It needs a roadmap item and
+  both maintainers' yes, as before.
 
 Neither step reduces hallucination by itself. What does: retrieve only a few
 notes per turn (done), tell the model to answer from a note or say it does not
-know, and let it call `list_memory` for a full lookup. Token cost stays flat,
-because the notes sent per turn stay at 3 facts. This needs a roadmap item and
-both maintainers' yes before any code.
+know, and let it call `list_memory` for a full lookup.
+
+## The memory screen
+
+The console has a Memory panel (the book icon in the top bar) so the owner can
+see everything stored, and correct or remove it, without talking to the model.
+It lists facts and open reminders with when each was saved and whether it was
+stored from the user's own words (the request-word gate in rule 11 passed; items
+saved before this feature show "Origin not recorded"). It has search (the same
+FTS5 recall), inline edit of a fact, forget, undo, and a pause switch.
+
+It works over the session's existing authenticated socket, so it needs an open
+session. If `SUPER_AGENT_MEMORY` is not on, every memory message is refused and
+the panel says memory is off.
+
+| Browser sends | Fields (all required, no others) | Reply |
+| --- | --- | --- |
+| `memory.list` | `query`: string, up to 100 characters ("" for everything; the page sends one only with 3 or more) | `memory.items` |
+| `memory.edit` | `id`: integer 1 to 2^31, `text`: string, 1 to 1000 characters | `memory.result` |
+| `memory.forget` | `kind`: `fact` or `reminder`, `id`: as above | `memory.result` |
+| `memory.undo` | none | `memory.result` |
+| `memory.pause` | `paused`: boolean | `memory.result` |
+
+`memory.items` is `{ enabled, paused, undoable, items }`. Each item has `kind`,
+`id`, `text`, `createdAt`, `fromUser`, and for a reminder `dueAt` and `repeat`.
+`undoable` counts the items the latest forget would restore (inside the 24 hour
+window). `memory.result` is `{ op, ok }` plus `error` when refused. The error is
+one of `memory-off`, `bad-text`, `secret`, `duplicate`, `not-found`,
+`nothing-to-restore`, `full` or `failed`. After a change the page lists again
+rather than guessing what the store holds.
+
+Rules in code (`memory_screen.py`, `memory.py`):
+
+1. **Browser only.** The receive loop in `app.py` is the one caller. Adapter
+   events (model output, tool output, transcripts) go to the console as text
+   and never reach the handler. The owner functions are not model tools: they
+   are not in `TOOLS`, `NAMES` or the dispatch table, so a tool call named
+   `edit_fact` is "no such tool". A test fails if an adapter module imports them.
+2. **Strict shape.** Wrong type, unknown or missing field, a bool where an
+   integer is expected, an id out of range or text over its limit closes the
+   session with `invalid-control`, as `action.decision` does. Before
+   authentication the socket closes (1008) and nothing runs.
+3. **Same limits as the tools.** An edit goes through the same cleaning,
+   240 character limit, secret check and bracket rule as a saved fact, and may
+   not duplicate another fact. Only facts can be edited; a forgotten item is
+   "not found".
+4. **Forget and undo reuse the soft delete.** Forget stamps one item and undo
+   restores the latest batch inside 24 hours, exactly as the voice tools do.
+5. **Pause.** While paused, the model's memory writes (`remember_fact`,
+   `add_reminder`, `complete_reminder`, `forget`, `undo_forget`) return a fixed
+   refusal. Reads and the owner's own screen edits still work, so the owner can
+   clean up while paused. The flag is process-wide, cleared when a session
+   starts and when it ends, and never stored.
+6. **Never logged.** Each screen operation appends time, `screen_*` operation
+   and ok or error to the audit log. Text, ids and queries are not logged, and
+   the reply text goes to the browser only.
+7. **Rendered as text.** The page parses every reply strictly, bounds it, shows
+   stored text with text interpolation (never HTML) and replaces an unknown
+   error code with fixed wording.
+
+With Gemini the screen is not a model path: listing or editing never sends
+stored text to Google. Only a memory tool call the model makes does.
 
 ## Known limits
 
@@ -101,6 +160,11 @@ both maintainers' yes before any code.
   the next time, so that one still speaks.
 - Completing a one-time reminder has no undo.
 - Forgotten text stays on disk, soft-deleted, for up to 24 hours.
+- The memory screen needs an open voice session, because it uses that
+  socket. A refused edit closes the inline editor, so the typed text is lost.
+- Recall matches word forms, not meaning: "my sibling" does not find "my
+  sister".
+- Items saved before the screen existed have no recorded origin.
 - A memory write already running in a thread finishes even if the user
   interrupts or the session closes.
 - Local time comes from `/etc/localtime`. On Windows it falls back to a fixed

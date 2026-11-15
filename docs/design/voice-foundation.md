@@ -241,6 +241,7 @@ Client events:
 | `capture.unmute` | `{ "type": "capture.unmute" }` | Starts a new provider audio stream. |
 | `playback.interrupt` | `{ "type": "playback.interrupt" }` | Local barge-in. Stops playback and bumps the epoch. |
 | `session.stop` | `{ "type": "session.stop" }` | Ends the session and closes the provider. |
+| `memory.list`, `memory.edit`, `memory.forget`, `memory.undo`, `memory.pause` | See [the memory screen](local-memory-reminders.md#the-memory-screen) | The owner's memory controls. Browser only, exact fields, malformed means `invalid-control`. |
 
 Server events:
 
@@ -251,6 +252,7 @@ Server events:
 | `turn.complete` | `{ "type": "turn.complete", "playbackEpoch": 0 }` | Model turn ended. |
 | `session.state` | `{ "type": "session.state", "state": "listening" }` or `{ "type": "session.state", "muted": true }` | Visible state. |
 | `playback.interrupted` | `{ "type": "playback.interrupted", "playbackEpoch": 1, "source": "local" }` | Local or provider interruption. |
+| `memory.items`, `memory.result` | See [the memory screen](local-memory-reminders.md#the-memory-screen) | Replies to the memory messages above. Stored text for the browser only, never logged. |
 | `session.error` | `{ "type": "session.error", "category": "provider-unavailable" }` | Fixed category only. |
 | `session.metrics` | `{ "type": "session.metrics", "inputFrames": 0, "droppedInputFrames": 0, "outputChunks": 0, "droppedOutputChunks": 0 }` | Optional aggregate counters. No payloads. |
 

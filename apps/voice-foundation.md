@@ -38,7 +38,15 @@ cannot change, send, or delete anything. T1 is off unless you set
 With `SUPER_AGENT_MEMORY=on` it also remembers facts and sets reminders in a
 local file, `~/.super-agent/memory.db`, and can forget them (tier T2,
 [design](../docs/design/local-memory-reminders.md)). Due reminders are spoken
-between turns while a session is open.
+between turns while a session is open. The console's Memory panel (book icon,
+top bar) shows everything stored, with search, edit, forget, undo and a
+"Pause memory" switch, without involving the model. It needs an open session,
+uses the same authenticated socket, and says memory is off if
+`SUPER_AGENT_MEMORY` is not on. Recall uses SQLite FTS5 and falls back to word
+overlap if this Python's SQLite lacks it. The screen messages (`memory.list`,
+`memory.edit`, `memory.forget`, `memory.undo`, `memory.pause`) come only from
+the browser, have exact fields and size limits, and are described in the
+[design](../docs/design/local-memory-reminders.md#the-memory-screen).
 
 With `SUPER_AGENT_ACTIONS=on` (macOS only) it can also open a web page, search
 the web, or open one allowed app (tier T3,
