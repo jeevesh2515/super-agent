@@ -14,6 +14,9 @@ background task delegation.
 > no workers, stored audio, or complete assistant. RT-G01 and later runtime
 > gates remain open.
 
+The [landing preview](apps/landing/README.md) includes a standalone, simulated
+walkthrough of the proposed job controls.
+
 ## Start here
 
 | Document | Purpose |
