@@ -23,9 +23,11 @@ and replaced word-overlap recall with SQLite FTS5.
 - The owner's edit and forget functions must not be reachable by the model.
   Keeping them out of the tool tables, behind one caller in the receive loop,
   and adding a test that no adapter module imports them is cheap and checkable.
-- Saying where a fact came from needs the caller's gate, not the model: the
-  adapter passes `from_user` after the request-word check. Older rows show
-  "Origin not recorded" rather than a guess.
+- Whether a request was heard needs the caller's gate, not the model: the
+  adapter passes `from_user` after the request-word check. It is not proof of
+  authorship (the text is the model's arguments, and on Gemini the gate reads
+  the provider's transcription), so the screen says "You asked to save this"
+  or "No request recorded", never "saved from your words".
 - Pause is a process-wide flag because the backend allows one session. It is
   cleared when a session starts, not when it ends: clearing it in the end
   path ran before workers stopped, so a tool call in teardown could write

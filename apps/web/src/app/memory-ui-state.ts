@@ -117,9 +117,13 @@ function formatted(iso: string, format: Intl.DateTimeFormat): string {
   return Number.isNaN(time.getTime()) ? '' : format.format(time);
 }
 
-/** One plain line under an item: where it came from, when it was saved, and when a reminder is due. */
+/**
+ * One plain line under an item: whether a request word was heard when it was saved, when it was saved,
+ * and when a reminder is due. `fromUser` is a hint from the request-word check, not proof of authorship:
+ * the stored text is what the model passed, and the flag grants nothing.
+ */
 export function itemMeta(item: MemoryItem): string {
-  const parts = [item.fromUser ? 'Saved from your words' : 'Origin not recorded'];
+  const parts = [item.fromUser ? 'You asked to save this' : 'No request recorded'];
   const saved = formatted(item.createdAt, DATE);
   if (saved) parts.push(`saved ${saved}`);
   const due = item.dueAt ? formatted(item.dueAt, DATE_TIME) : '';

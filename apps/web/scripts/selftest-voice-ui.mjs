@@ -133,9 +133,9 @@ equal(mem.editedText('   ', 'old'), null);
 equal(mem.editedText('x'.repeat(241), 'old'), null);
 equal(mem.editedText('x'.repeat(240), 'old').length, 240);
 
-equal(mem.itemMeta(item()).startsWith('Saved from your words · saved '), true);
-equal(mem.itemMeta(item({ fromUser: false })).startsWith('Origin not recorded'), true);
-equal(mem.itemMeta(item({ createdAt: 'garbage' })), 'Saved from your words');
+equal(mem.itemMeta(item()).startsWith('You asked to save this · saved '), true);
+equal(mem.itemMeta(item({ fromUser: false })).startsWith('No request recorded'), true);
+equal(mem.itemMeta(item({ createdAt: 'garbage' })), 'You asked to save this');
 equal(mem.itemMeta(reminder).includes('due '), true);
 equal(mem.itemMeta(reminder).endsWith('(repeats)'), true);
 equal(mem.memorySummary(null, false), 'Loading memory.');

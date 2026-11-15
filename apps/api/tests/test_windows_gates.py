@@ -15,7 +15,7 @@ from test_gemini_adapter import FakeSession, run
 from test_gemini_console import make
 from test_weather import ask, fake_get
 
-from super_agent_voice import actions, gemini_adapter, local_adapter, memory, posix_files, recap
+from super_agent_voice import actions, gemini_adapter, local_adapter, memory, memory_screen, posix_files, recap
 
 
 @pytest.fixture
@@ -80,6 +80,37 @@ def test_weather_still_answers_and_writes_no_audit_line(windows, monkeypatch):
     fake_get(monkeypatch)
     assert ask("Lisbon").startswith("In Lisbon")
     assert not actions.AUDIT_LOG.exists()
+
+
+def test_the_memory_screen_works_on_windows_because_the_store_needs_nothing_posix_only(windows, monkeypatch):
+    # The store uses plain open, chmod and sqlite3, not O_NOFOLLOW, fchmod or getuid, so memory stays
+    # available on Windows (its owner-only mode is weaker there, as for any file) and the screen must too.
+    monkeypatch.setenv("SUPER_AGENT_MEMORY", "on")
+    assert memory.run("remember_fact", {"text": "my sister Asha lives in Leeds"}, True).startswith("Remembered")
+
+    async def ask(**message):
+        return await memory_screen.handle(message)
+
+    listed = run(ask(type="memory.list", query="sister"))
+    assert listed["enabled"] is True and [i["text"] for i in listed["items"]] == ["my sister Asha lives in Leeds"]
+    fact = listed["items"][0]["id"]
+    assert run(ask(type="memory.edit", id=fact, text="my sister Asha lives in York"))["ok"] is True
+    assert run(ask(type="memory.pause", paused=True))["ok"] is True
+    assert memory.run("remember_fact", {"text": "x"}) == memory.PAUSED
+    memory.reset_pause()
+    assert run(ask(type="memory.forget", kind="fact", id=fact))["ok"] is True
+    assert run(ask(type="memory.undo"))["ok"] is True
+    assert run(ask(type="memory.list", query=""))["items"][0]["text"] == "my sister Asha lives in York"
+    assert not memory.AUDIT_LOG.exists()  # like the other audit logs, nothing is written where it cannot be safe
+
+
+def test_the_memory_screen_reports_memory_off_when_the_switch_is_off_on_windows(windows, monkeypatch):
+    monkeypatch.setenv("SUPER_AGENT_MEMORY", "off")
+    assert run(memory_screen.handle({"type": "memory.list", "query": ""}))["enabled"] is False
+    assert run(memory_screen.handle({"type": "memory.undo"})) == {
+        "type": "memory.result", "op": "undo", "ok": False, "error": "memory-off"}
+    monkeypatch.setenv("SUPER_AGENT_MEMORY", "maybe")  # a mistyped switch is off here, and never raises
+    assert run(memory_screen.handle({"type": "memory.list", "query": ""}))["enabled"] is False
 
 
 @needs_posix_files

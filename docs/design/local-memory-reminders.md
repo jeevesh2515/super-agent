@@ -91,10 +91,15 @@ know, and let it call `list_memory` for a full lookup.
 
 The console has a Memory panel (the book icon in the top bar) so the owner can
 see everything stored, and correct or remove it, without talking to the model.
-It lists facts and open reminders with when each was saved and whether it was
-stored from the user's own words (the request-word gate in rule 11 passed; items
-saved before this feature show "Origin not recorded"). It has search (the same
-FTS5 recall), inline edit of a fact, forget, undo, and a pause switch.
+It lists facts and open reminders with when each was saved and a label for the
+request flag: "You asked to save this" or "No request recorded". That flag,
+`fromUser`, means only that the request-word gate in rule 11 passed for the turn
+that wrote the item; on the Gemini path the gate reads the provider's
+transcription of the speech. The stored text is still the model's tool
+arguments, so the flag is not proof the user said those words, and it grants no
+authority. Items saved before this feature show "No request recorded". The
+panel also has search (the same FTS5 recall), inline edit of a fact, undo of the
+latest edit of a fact, forget, undo of a forget, and a pause switch.
 
 It works over the session's existing authenticated socket, so it needs an open
 session. If `SUPER_AGENT_MEMORY` is not on, every memory message is refused and
@@ -166,6 +171,10 @@ stored text to Google. Only a memory tool call the model makes does.
   the reason next to it.
 - A search needs a word of 3 or more characters. Anything else ("a b c")
   lists everything, in the backend and in the panel.
+- On Windows the store and the memory screen work: they use plain file calls,
+  sqlite3 and no O_NOFOLLOW, fchmod or getuid. The file's owner-only mode is
+  weaker there, and, like the other audit logs, the memory audit log is not
+  written (`posix_files.append_audit`).
 - Recall matches word forms, not meaning: "my sibling" does not find "my
   sister".
 - Items saved before the screen existed have no recorded origin.

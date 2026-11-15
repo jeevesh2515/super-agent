@@ -24,6 +24,8 @@ from functools import wraps
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from . import posix_files
+
 DB_PATH = Path.home() / ".super-agent" / "memory.db"
 # Metadata only, same file and format as tier1's audit log.
 AUDIT_LOG = Path.home() / ".super-agent" / "tool-audit.log"
@@ -696,7 +698,8 @@ def _valid(arguments: dict, params: dict) -> bool:
 def run(name: object, arguments: object, from_user: bool = False) -> str:
     """The only code a memory model call can reach. Unknown names do nothing.
 
-    from_user is set by the caller's gate, never by the model: the user's own words asked for this write."""
+    from_user is set by the caller's gate, never by the model. It means only that a request word passed the
+    gate this turn; the text is still the model's arguments, and the flag grants no authority."""
     result = _run(name, arguments, from_user)
     _audit(name, result)
     return result
@@ -716,16 +719,7 @@ def _run(name: object, arguments: object, from_user: bool) -> str:
 
 
 def _audit(name: object, result: str) -> None:
-    """Appends time, tool name, and outcome. Never arguments or content (REQ-14)."""
+    """Appends time, tool name, and outcome. Never arguments or content (REQ-14). Never raises."""
     shown = name if isinstance(name, str) and name in NAMES | _SCREEN_OPS else "unknown"
     outcome = "error" if result.startswith("error") else "ok"
-    line = f"{datetime.now().astimezone().strftime('%Y-%m-%dT%H:%M:%S%z')} {shown} {outcome}\n"
-    try:
-        AUDIT_LOG.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        fd = os.open(AUDIT_LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
-        try:
-            os.write(fd, line.encode())
-        finally:
-            os.close(fd)
-    except OSError:
-        pass  # an unwritable log must not break a memory write
+    posix_files.append_audit(AUDIT_LOG, posix_files.audit_line(shown, outcome))  # nothing is written where it cannot be done safely

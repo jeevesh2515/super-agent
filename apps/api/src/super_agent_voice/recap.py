@@ -33,7 +33,7 @@ TOOLS = [{"type": "function", "function": {
     "description": description,
     "parameters": {"type": "object", "properties": {}, "required": []}}} for name, description in (
     ("forget_conversation", "Forget the saved recap of earlier conversations. It is set aside and can be "
-                            "restored for 24 hours. Only when the user asks to forget, clear or delete it."),
+                            "restored for 24 hours. Only when the user asks to forget, delete or erase it."),
     ("restore_conversation", "Bring back the recap the user just had forgotten, if it was within 24 hours. "
                              "Only when the user asks to undo or restore it."))]
 FORGOTTEN = ("Done: the saved recap of earlier conversations is forgotten. It can be restored for 24 hours "
