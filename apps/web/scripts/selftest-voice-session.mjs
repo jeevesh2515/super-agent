@@ -1738,6 +1738,17 @@ await (async function memoryReplies() {
   assert.equal(service.memoryError(), 'That did not work. Nothing was changed.', 'unknown codes never show verbatim');
   service.undoMemory();
   assert.equal(service.memoryError(), '', 'the next change clears the old error');
+  const applied = service.editsApplied();
+  socket.fireMessage({ type: 'memory.result', op: 'edit', ok: false, error: 'duplicate' });
+  await flushed();
+  assert.equal(service.editsApplied(), applied, 'a refused edit does not count, so its editor stays open');
+  socket.fireMessage({ type: 'memory.result', op: 'forget', ok: true });
+  await flushed();
+  assert.equal(service.editsApplied(), applied, 'only an edit counts');
+  socket.fireMessage({ type: 'memory.result', op: 'edit', ok: true });
+  await flushed();
+  assert.equal(service.editsApplied(), applied + 1, 'an accepted edit lets the editor close');
+  service.clearMemoryError();
   socket.fireMessage({ type: 'memory.result', op: 'pause', ok: false, error: 'memory-off' });
   await flushed();
   assert.equal(service.memoryError(), 'Memory is off.');

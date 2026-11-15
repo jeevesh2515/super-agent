@@ -100,6 +100,13 @@ def test_view_lists_facts_then_reminders_and_filters_with_the_same_recall():
     assert texts("zzzzz") == []
 
 
+@pytest.mark.parametrize("query", ["a b c", "ab", "x y", "- - -", "?!"])
+def test_a_query_with_no_word_of_three_characters_is_no_search(query):
+    memory.remember_fact("my sister Asha lives in Leeds")
+    memory.add_reminder("call the dentist", "in 20 minutes")
+    assert len(texts(query)) == 2
+
+
 def test_view_does_not_create_the_store():
     assert memory.view() == {"items": [], "undoable": 0}
     assert not memory.DB_PATH.exists()
@@ -226,17 +233,46 @@ def test_list_edit_forget_undo_and_pause_on_the_open_socket():
         assert memory.run("remember_fact", {"text": "after resume"}).startswith("Remembered")
 
 
-def test_a_pause_does_not_outlive_the_session():
-    client, ws = session()
+class WritesWhileClosing(ScriptedAdapter):
+    """Tries a model memory write from close(), as a tool call still running in teardown would."""
+
+    def __init__(self) -> None:
+        super().__init__([])
+        self.during_teardown: list[str] = []
+
+    async def close(self) -> None:
+        self.during_teardown.append(memory.run("remember_fact", {"text": "written during teardown"}))
+        await super().close()
+
+
+def test_a_write_attempted_during_teardown_of_a_paused_session_is_refused():
+    adapter = WritesWhileClosing()
+    client, ws = session(adapter)
     with client, ws as websocket:
         authenticate(websocket)
         ask(websocket, type="memory.pause", paused=True)
-        assert memory.is_paused()
         websocket.send_json({"type": "session.stop"})
         assert websocket.receive_json() == {"type": "session.state", "state": "stopping"}
         with pytest.raises(WebSocketDisconnect):
             websocket.receive_json()
-    assert not memory.is_paused()
+    assert adapter.during_teardown == [memory.PAUSED]
+    assert texts() == []
+
+
+def test_a_pause_does_not_carry_into_the_next_session():
+    client = make_client(ScriptedAdapter([]))
+    with client, connect(client) as websocket:
+        authenticate(websocket)
+        ask(websocket, type="memory.pause", paused=True)
+        websocket.send_json({"type": "session.stop"})
+        assert websocket.receive_json() == {"type": "session.state", "state": "stopping"}
+        with pytest.raises(WebSocketDisconnect):
+            websocket.receive_json()
+        assert memory.is_paused()
+    with make_client(ScriptedAdapter([])) as client2, connect(client2) as second:
+        authenticate(second)
+        assert not memory.is_paused()
+        assert ask(second, type="memory.list", query="")["paused"] is False
 
 
 def test_unknown_ids_and_bad_text_are_refused_with_fixed_codes():

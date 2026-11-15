@@ -92,10 +92,13 @@ export function memoryErrorText(code: string): string {
   return ERROR_TEXT[code] ?? ERROR_TEXT['failed'];
 }
 
-/** What to ask the backend for: no filter until there are enough characters to search with. */
+/**
+ * What to ask the backend for: no filter unless the text holds a word of at least three characters,
+ * the same rule the backend's recall uses, so "a b c" lists everything on both sides.
+ */
 export function searchQuery(typed: string): string {
   const trimmed = typed.trim().slice(0, MAX_QUERY_CHARS);
-  return trimmed.length >= MIN_QUERY_CHARS ? trimmed : '';
+  return new RegExp(`[\\p{L}\\p{N}_]{${MIN_QUERY_CHARS},}`, 'u').test(trimmed) ? trimmed : '';
 }
 
 /** The text to send for an edit, or null if it is empty, unchanged or too long. */

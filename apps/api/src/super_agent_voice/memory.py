@@ -575,7 +575,7 @@ def set_paused(paused: bool) -> None:
 
 
 def reset_pause() -> None:
-    """Called when a session starts or ends, so a pause never carries over. Not logged: nothing was asked."""
+    """Called when a session starts, so a pause never carries over. Not logged: nothing was asked."""
     _paused.clear()
 
 
@@ -584,7 +584,9 @@ def is_paused() -> bool:
 
 
 def view(query: str = "") -> dict:
-    """Everything stored, newest facts first then reminders soonest first, or the matches for a query."""
+    """Everything stored, newest facts first then reminders soonest first, or the matches for a query.
+
+    A query with no word of 3 or more characters ("a b c") filters nothing; the console applies the same rule."""
     _audit("screen_list", "ok")
     if not DB_PATH.exists():  # looking must not create the store for someone who never used it
         return {"items": [], "undoable": 0}
@@ -598,10 +600,11 @@ def view(query: str = "") -> dict:
             f"SELECT count(*) FROM {table} WHERE deleted_at = ?", (latest,)).fetchone()[0]
             for table in ("facts", "reminders"))
     query = _clean(query)
+    searching = bool(_words(query))  # a query with no word of 3 letters or more is no search: everything shows
     items: list[dict] = []
     for kind, rows in (("fact", facts), ("reminder", reminders)):
         by_id = {row[0]: row for row in rows}
-        order = [id_ for id_, _ in _recall([(row[0], row[1]) for row in rows], query)] if query else list(by_id)
+        order = [id_ for id_, _ in _recall([(row[0], row[1]) for row in rows], query)] if searching else list(by_id)
         for id_ in order:
             _, text, created, from_user, *reminder = by_id[id_]
             item = {"kind": kind, "id": id_, "text": text, "createdAt": created, "fromUser": bool(from_user)}

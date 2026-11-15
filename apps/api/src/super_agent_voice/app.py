@@ -567,7 +567,9 @@ async def _voice_socket(
         await websocket.close(code=1013)
         return
 
-    memory.reset_pause()  # a pause lasts for one session
+    # A pause lasts for one session. It is cleared here, at the start, and not when the session ends:
+    # teardown still stops workers and closes the adapter, and a tool call then must still be refused.
+    memory.reset_pause()
     adapter: VoiceAdapter | None = None
     tasks: list[asyncio.Task[None]] = []
     failure = None
@@ -618,7 +620,6 @@ async def _voice_socket(
     except Exception:
         failure = _SessionFailure("session-failed")
     finally:
-        memory.reset_pause()
         if adapter is not None:
             log.info("voice: session closed adapter=%s", adapter.name)
         record = _SessionTeardown(

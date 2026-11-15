@@ -27,7 +27,9 @@ and replaced word-overlap recall with SQLite FTS5.
   adapter passes `from_user` after the request-word check. Older rows show
   "Origin not recorded" rather than a guess.
 - Pause is a process-wide flag because the backend allows one session. It is
-  cleared when a session starts and ends so it cannot outlive the person who set it.
+  cleared when a session starts, not when it ends: clearing it in the end
+  path ran before workers stopped, so a tool call in teardown could write
+  while the user believed memory was paused.
 
 ## What to do differently
 

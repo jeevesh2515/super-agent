@@ -137,7 +137,8 @@ Rules in code (`memory_screen.py`, `memory.py`):
    `add_reminder`, `complete_reminder`, `forget`, `undo_forget`) return a fixed
    refusal. Reads and the owner's own screen edits still work, so the owner can
    clean up while paused. The flag is process-wide, cleared when a session
-   starts and when it ends, and never stored.
+   starts (not when it ends, so a tool call still running in teardown is
+   refused) and never stored.
 6. **Never logged.** Each screen operation appends time, `screen_*` operation
    and ok or error to the audit log. Text, ids and queries are not logged, and
    the reply text goes to the browser only.
@@ -161,7 +162,10 @@ stored text to Google. Only a memory tool call the model makes does.
 - Completing a one-time reminder has no undo.
 - Forgotten text stays on disk, soft-deleted, for up to 24 hours.
 - The memory screen needs an open voice session, because it uses that
-  socket. A refused edit closes the inline editor, so the typed text is lost.
+  socket. A refused edit keeps the editor open with the typed text and shows
+  the reason next to it.
+- A search needs a word of 3 or more characters. Anything else ("a b c")
+  lists everything, in the backend and in the panel.
 - Recall matches word forms, not meaning: "my sibling" does not find "my
   sister".
 - Items saved before the screen existed have no recorded origin.

@@ -57,6 +57,8 @@ export class VoiceSessionService {
   readonly memory = signal<MemoryView | null>(null);
   /** Fixed wording for the last memory change that was refused; empty otherwise. */
   readonly memoryError = signal('');
+  /** Counts applied edits, so the open editor can close only when its edit was accepted. */
+  readonly editsApplied = signal(0);
   /** The search the list is showing, so a change re-lists the same view. */
   private memoryQuery = '';
 
@@ -191,6 +193,10 @@ export class VoiceSessionService {
     this.sendMemory({ type: 'memory.forget', kind, id });
   }
 
+  clearMemoryError(): void {
+    this.memoryError.set('');
+  }
+
   undoMemory(): void {
     this.sendMemory({ type: 'memory.undo' });
   }
@@ -311,6 +317,7 @@ export class VoiceSessionService {
       const result = parseMemoryResult(message);
       if (!result) throw new Error('Invalid memory result.');
       this.memoryError.set(result.ok ? '' : memoryErrorText(result.error));
+      if (result.ok && result.op === 'edit') this.editsApplied.update((n) => n + 1);
       // A change is shown by listing again, so the page never guesses what the store now holds.
       if (result.op !== 'list') this.listMemory(this.memoryQuery);
     } else if (message.type === 'playback.interrupted') {

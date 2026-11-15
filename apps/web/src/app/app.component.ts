@@ -6,8 +6,10 @@ import {
   ViewChild,
   afterRenderEffect,
   computed,
+  effect,
   inject,
   signal,
+  untracked,
 } from '@angular/core';
 import { VoiceSessionService } from './voice-session.service';
 import {
@@ -79,6 +81,18 @@ export class AppComponent implements OnDestroy {
     if (el) el.scrollTop = el.scrollHeight;
   });
 
+  // An edit stays open, with its text, until the backend accepts it; a refusal shows next to it.
+  private seenEdits = 0;
+  private readonly closeAcceptedEdit = effect(() => {
+    const applied = this.session.editsApplied();
+    if (applied === this.seenEdits) return;
+    this.seenEdits = applied;
+    untracked(() => {
+      const editing = this.editing();
+      if (editing) this.cancelEdit(editing);
+    });
+  });
+
   // Keeps focus inside the memory panel: on open, and when a forgotten row takes the focused button with it.
   private readonly focusMemoryPanel = afterRenderEffect(() => {
     if (!this.memoryOpen()) return;
@@ -117,6 +131,7 @@ export class AppComponent implements OnDestroy {
 
   closeMemory(): void {
     if (!this.memoryOpen()) return;
+    this.session.clearMemoryError();
     window.clearTimeout(this.searchTimer);
     this.cancelEdit();
     this.searchText.set('');
@@ -145,6 +160,7 @@ export class AppComponent implements OnDestroy {
   }
 
   startEdit(item: MemoryItem): void {
+    this.session.clearMemoryError();
     this.editing.set({ kind: item.kind, id: item.id });
     this.editText.set(item.text);
     window.setTimeout(() => this.memoryPanel?.nativeElement.querySelector<HTMLInputElement>('.memory-edit')?.focus());
@@ -158,11 +174,10 @@ export class AppComponent implements OnDestroy {
     const text = editedText(this.editText(), item.text);
     if (text === null) return;
     this.session.editMemory(item.id, text);
-    this.cancelEdit(item);
   }
 
   /** Esc stops here, so it leaves the edit and not the whole panel. */
-  cancelEdit(item?: MemoryItem, event?: Event): void {
+  cancelEdit(item?: { id: number }, event?: Event): void {
     event?.stopPropagation();
     this.editing.set(null);
     if (item) window.setTimeout(() => this.memoryPanel?.nativeElement.querySelector<HTMLElement>(`[data-edit="${item.id}"]`)?.focus());

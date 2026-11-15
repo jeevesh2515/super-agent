@@ -122,6 +122,10 @@ equal(mem.memoryErrorText('anything else'), 'That did not work. Nothing was chan
 equal(mem.searchQuery(''), '');
 equal(mem.searchQuery('  si '), '');
 equal(mem.searchQuery(' sis '), 'sis');
+equal(mem.searchQuery('a b c'), '', 'no word of 3 characters is no search, as in the backend');
+equal(mem.searchQuery('- - -'), '');
+equal(mem.searchQuery('a bcd'), 'a bcd');
+equal(mem.searchQuery('caf\u00e9'), 'caf\u00e9');
 equal(mem.searchQuery('x'.repeat(150)).length, 100);
 equal(mem.editedText('  a   new  fact ', 'old'), 'a new fact');
 equal(mem.editedText('same', 'same'), null);

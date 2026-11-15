@@ -226,7 +226,7 @@
               [value]="searchText()" (input)="onMemorySearch(memorySearch.value)">
 
             <p class="memory-summary" id="memory-summary" role="status">{{ memorySummary() }}</p>
-            @if (session.memoryError()) { <p class="settings-error" role="alert">{{ session.memoryError() }}</p> }
+            @if (session.memoryError() && !editing()) { <p class="settings-error" role="alert">{{ session.memoryError() }}</p> }
 
             @if (view.undoable) {
               <div class="memory-undo">
@@ -245,6 +245,7 @@
                       [attr.maxlength]="maxItemChars" [value]="editText()"
                       (input)="editText.set(editInput.value)" (keydown.enter)="saveEdit(item)"
                       (keydown.escape)="cancelEdit(item, $event)">
+                    @if (session.memoryError()) { <p class="settings-error" role="alert">{{ session.memoryError() }}</p> }
                     <div class="memory-actions">
                       <button class="secondary-button" type="button" (click)="cancelEdit(item)">Cancel</button>
                       <button class="connect-button" type="button" (click)="saveEdit(item)" [disabled]="!canSave(item)">Save</button>
