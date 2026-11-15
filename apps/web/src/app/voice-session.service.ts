@@ -1,6 +1,9 @@
 import { Injectable, signal } from '@angular/core';
 import { PlaybackEpochTracker } from './playback-epoch';
 import { inputRms, pcmIsAudible } from './audio-signal';
+import {
+  MemoryView, parseMemoryItems, parseMemoryResult, memoryErrorText, searchQuery,
+} from './memory-ui-state';
 
 /**
  * Fixed redaction allowlist for `session.error`. Only these backend
@@ -50,6 +53,12 @@ export class VoiceSessionService {
   readonly pendingAction = signal<PendingAction | null>(null);
   /** When the current card appeared, so a click that lands on it by accident is ignored. */
   readonly pendingActionShownAt = signal(0);
+  /** What the assistant remembers, as last listed over this session's socket; null until listed. */
+  readonly memory = signal<MemoryView | null>(null);
+  /** Fixed wording for the last memory change that was refused; empty otherwise. */
+  readonly memoryError = signal('');
+  /** The search the list is showing, so a change re-lists the same view. */
+  private memoryQuery = '';
 
   private socket?: WebSocket;
   private stream?: MediaStream;
@@ -168,6 +177,35 @@ export class VoiceSessionService {
     this.pendingAction.set(null);
   }
 
+  /** Memory messages go only from these methods, each called from a click or a typed search. */
+  listMemory(typed = ''): void {
+    this.memoryQuery = searchQuery(typed);
+    this.sendMemory({ type: 'memory.list', query: this.memoryQuery });
+  }
+
+  editMemory(id: number, text: string): void {
+    this.sendMemory({ type: 'memory.edit', id, text });
+  }
+
+  forgetMemory(kind: 'fact' | 'reminder', id: number): void {
+    this.sendMemory({ type: 'memory.forget', kind, id });
+  }
+
+  undoMemory(): void {
+    this.sendMemory({ type: 'memory.undo' });
+  }
+
+  setMemoryPaused(paused: boolean): void {
+    this.sendMemory({ type: 'memory.pause', paused });
+  }
+
+  private sendMemory(message: Record<string, unknown>): void {
+    const socket = this.socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    if (message['type'] !== 'memory.list') this.memoryError.set('');
+    socket.send(JSON.stringify(message));
+  }
+
   stop(): void {
     const socket = this.socket;
     if (socket?.readyState === WebSocket.OPEN) {
@@ -198,6 +236,13 @@ export class VoiceSessionService {
       text?: unknown;
       id?: unknown;
       summary?: unknown;
+      enabled?: unknown;
+      paused?: unknown;
+      undoable?: unknown;
+      items?: unknown;
+      op?: unknown;
+      ok?: unknown;
+      error?: unknown;
     };
     if (message.type === 'session.ready') {
       // Only these may get the microphone; the console labels gemini-live as a cloud provider.
@@ -258,6 +303,16 @@ export class VoiceSessionService {
       }
     } else if (message.type === 'action.closed') {
       if (message.id === this.pendingAction()?.id) this.pendingAction.set(null);
+    } else if (message.type === 'memory.items') {
+      const view = parseMemoryItems(message);
+      if (!view) throw new Error('Invalid memory list.');
+      this.memory.set(view);
+    } else if (message.type === 'memory.result') {
+      const result = parseMemoryResult(message);
+      if (!result) throw new Error('Invalid memory result.');
+      this.memoryError.set(result.ok ? '' : memoryErrorText(result.error));
+      // A change is shown by listing again, so the page never guesses what the store now holds.
+      if (result.op !== 'list') this.listMemory(this.memoryQuery);
     } else if (message.type === 'playback.interrupted') {
       // The backend epoch is authoritative and clears the pending interrupt.
       this.epochs.onServerInterrupt(message.playbackEpoch);
@@ -457,6 +512,9 @@ export class VoiceSessionService {
     this.provider.set('');
     this.conversation.set([]);
     this.pendingAction.set(null);
+    this.memory.set(null);
+    this.memoryError.set('');
+    this.memoryQuery = '';
     this.pendingRateHz = undefined;
     this.interruptPending = false;
     this.capturing = false;

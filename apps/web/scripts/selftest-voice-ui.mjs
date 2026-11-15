@@ -6,18 +6,21 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 
-const sourcePath = fileURLToPath(new URL('../src/app/voice-ui-state.ts', import.meta.url));
-const { outputText } = ts.transpileModule(await readFile(sourcePath, 'utf8'), {
-  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
-});
-
 const base = path.join(os.tmpdir(), 'opencode');
 await mkdir(base, { recursive: true });
 const workdir = await mkdtemp(path.join(base, 'voice-ui-'));
-const compiled = path.join(workdir, 'voice-ui-state.cjs');
-await writeFile(compiled, outputText);
 const require = createRequire(import.meta.url);
-const ui = require(compiled);
+async function load(file) {
+  const sourcePath = fileURLToPath(new URL(`../src/app/${file}.ts`, import.meta.url));
+  const { outputText } = ts.transpileModule(await readFile(sourcePath, 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+  });
+  const compiled = path.join(workdir, `${file}.cjs`);
+  await writeFile(compiled, outputText);
+  return require(compiled);
+}
+const ui = await load('voice-ui-state');
+const mem = await load('memory-ui-state');
 await rm(workdir, { recursive: true, force: true });
 
 let cases = 0;
@@ -77,5 +80,65 @@ for (const p of ['gemini-live', '', 'unknown']) {
 }
 for (const p of ['', 'unknown']) equal(JSON.stringify(ui.providerCopy(p)).toLowerCase().includes('fake'), false);
 equal(ui.providerCopy('').badge, 'Not connected');
+
+// Memory screen state logic.
+const item = (over = {}) => ({ kind: 'fact', id: 3, text: 'my sister is Asha', createdAt: '2026-11-14T09:30:00+00:00', fromUser: true, ...over });
+const listMsg = (over = {}) => ({ enabled: true, paused: false, undoable: 0, items: [item()], ...over });
+const view = mem.parseMemoryItems(listMsg());
+equal(view.items.length, 1);
+equal(view.items[0].text, 'my sister is Asha');
+equal(view.paused, false);
+equal(mem.parseMemoryItems(listMsg({ enabled: false, items: [] })).enabled, false);
+const reminder = item({ kind: 'reminder', id: 4, text: 'call home', dueAt: '2026-11-15T10:00:00+00:00', repeat: 'daily' });
+equal(mem.parseMemoryItems(listMsg({ items: [reminder] })).items[0].repeat, 'daily');
+equal(mem.parseMemoryItems(listMsg({ items: [{ ...reminder, repeat: null }] })).items[0].repeat, null);
+// Anything the backend would never send is refused whole, not partly shown.
+for (const bad of [
+  listMsg({ enabled: 'yes' }), listMsg({ paused: 1 }), listMsg({ undoable: -1 }), listMsg({ undoable: 1.5 }),
+  listMsg({ undoable: 'x' }), listMsg({ items: 'nope' }), listMsg({ items: null }), listMsg({ items: [null] }),
+  listMsg({ items: ['text'] }), listMsg({ items: [item({ kind: 'note' })] }), listMsg({ items: [item({ id: '3' })] }),
+  listMsg({ items: [item({ id: 0 })] }), listMsg({ items: [item({ id: 1.5 })] }), listMsg({ items: [item({ text: '' })] }),
+  listMsg({ items: [item({ text: 'x'.repeat(241) })] }), listMsg({ items: [item({ text: 5 })] }),
+  listMsg({ items: [item({ fromUser: 'true' })] }), listMsg({ items: [item({ createdAt: 5 })] }),
+  listMsg({ items: [item({ kind: 'reminder' })] }),
+  listMsg({ items: Array.from({ length: 351 }, (_, i) => item({ id: i + 1 })) }),
+  {}, { enabled: true },
+]) equal(mem.parseMemoryItems(bad), null);
+equal(mem.parseMemoryItems(listMsg({ items: Array.from({ length: 350 }, (_, i) => item({ id: i + 1 })) })).items.length, 350);
+// Text stays text: markup in an item is kept as the characters it is, for the template to escape.
+equal(mem.parseMemoryItems(listMsg({ items: [item({ text: '<img src=x onerror=alert(1)>' })] })).items[0].text, '<img src=x onerror=alert(1)>');
+
+equal(JSON.stringify(mem.parseMemoryResult({ op: 'edit', ok: true })), '{"op":"edit","ok":true,"error":""}');
+equal(mem.parseMemoryResult({ op: 'edit', ok: false, error: 'secret' }).error, 'secret');
+equal(mem.parseMemoryResult({ op: 'edit', ok: false, error: 'something <b>new</b>' }).error, 'failed');
+equal(mem.parseMemoryResult({ op: 'edit', ok: false }).error, 'failed');
+equal(mem.parseMemoryResult({ op: 'delete', ok: true }), null);
+equal(mem.parseMemoryResult({ op: 'edit', ok: 'yes' }), null);
+equal(mem.parseMemoryResult({ ok: true }), null);
+equal(mem.memoryErrorText('memory-off'), 'Memory is off.');
+equal(mem.memoryErrorText('secret'), 'That looks like a secret, so it was not saved.');
+equal(mem.memoryErrorText('anything else'), 'That did not work. Nothing was changed.');
+
+equal(mem.searchQuery(''), '');
+equal(mem.searchQuery('  si '), '');
+equal(mem.searchQuery(' sis '), 'sis');
+equal(mem.searchQuery('x'.repeat(150)).length, 100);
+equal(mem.editedText('  a   new  fact ', 'old'), 'a new fact');
+equal(mem.editedText('same', 'same'), null);
+equal(mem.editedText('   ', 'old'), null);
+equal(mem.editedText('x'.repeat(241), 'old'), null);
+equal(mem.editedText('x'.repeat(240), 'old').length, 240);
+
+equal(mem.itemMeta(item()).startsWith('Saved from your words · saved '), true);
+equal(mem.itemMeta(item({ fromUser: false })).startsWith('Origin not recorded'), true);
+equal(mem.itemMeta(item({ createdAt: 'garbage' })), 'Saved from your words');
+equal(mem.itemMeta(reminder).includes('due '), true);
+equal(mem.itemMeta(reminder).endsWith('(repeats)'), true);
+equal(mem.memorySummary(null, false), 'Loading memory.');
+equal(mem.memorySummary(mem.parseMemoryItems(listMsg({ enabled: false, items: [] })), false), 'Memory is off.');
+equal(mem.memorySummary(mem.parseMemoryItems(listMsg({ items: [] })), false), 'Nothing is remembered yet.');
+equal(mem.memorySummary(mem.parseMemoryItems(listMsg({ items: [] })), true), 'Nothing matches that search.');
+equal(mem.memorySummary(view, false), '1 item.');
+equal(mem.memorySummary(mem.parseMemoryItems(listMsg({ items: [item(), item({ id: 5 })] })), true), '2 items match.');
 
 console.log(`voice-ui state self-test: PASS (${cases} cases)`);

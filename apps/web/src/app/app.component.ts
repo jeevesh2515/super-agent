@@ -11,6 +11,15 @@ import {
 } from '@angular/core';
 import { VoiceSessionService } from './voice-session.service';
 import {
+  MAX_ITEM_CHARS,
+  MAX_QUERY_CHARS,
+  MemoryItem,
+  editedText,
+  itemMeta,
+  memorySummary,
+  searchQuery,
+} from './memory-ui-state';
+import {
   formatElapsed,
   isSessionActive,
   isSessionReady,
@@ -33,9 +42,20 @@ export class AppComponent implements OnDestroy {
   @ViewChild('tokenInput') private tokenInput?: ElementRef<HTMLInputElement>;
   @ViewChild('transcript') private transcript?: ElementRef<HTMLElement>;
   @ViewChild('denyButton') private denyButton?: ElementRef<HTMLButtonElement>;
+  @ViewChild('memoryButton') private memoryButton?: ElementRef<HTMLButtonElement>;
+  @ViewChild('memoryPanel') private memoryPanel?: ElementRef<HTMLElement>;
+  @ViewChild('memoryClose') private memoryClose?: ElementRef<HTMLButtonElement>;
+  @ViewChild('memorySearch') private memorySearch?: ElementRef<HTMLInputElement>;
 
   readonly session = inject(VoiceSessionService);
   readonly settingsOpen = signal(false);
+  readonly memoryOpen = signal(false);
+  readonly searchText = signal('');
+  /** The one fact being edited, and the text typed so far. */
+  readonly editing = signal<{ kind: string; id: number } | null>(null);
+  readonly editText = signal('');
+  readonly maxItemChars = MAX_ITEM_CHARS;
+  readonly maxQueryChars = MAX_QUERY_CHARS;
   readonly elapsedMs = signal(0);
   readonly bars = Array.from({ length: 40 }, (_, index) => {
     const center = Math.sin(((index + 1) / 41) * Math.PI);
@@ -50,12 +70,21 @@ export class AppComponent implements OnDestroy {
   readonly isSessionReady = computed(() => isSessionReady(this.session.status()));
   readonly canControlSession = computed(() => this.isSessionReady());
   readonly pipelineSummary = computed(() => pipelineSummary(this.session.status(), this.session.provider()));
+  readonly memorySummary = computed(() => memorySummary(this.session.memory(), searchQuery(this.searchText()) !== ''));
 
   // Keeps the newest line in view; reads the signal so it reruns per entry.
   private readonly followTranscript = afterRenderEffect(() => {
     this.session.conversation();
     const el = this.transcript?.nativeElement;
     if (el) el.scrollTop = el.scrollHeight;
+  });
+
+  // Keeps focus inside the memory panel: on open, and when a forgotten row takes the focused button with it.
+  private readonly focusMemoryPanel = afterRenderEffect(() => {
+    if (!this.memoryOpen()) return;
+    this.session.memory();
+    const panel = this.memoryPanel?.nativeElement;
+    if (panel && !panel.contains(document.activeElement)) (this.memorySearch ?? this.memoryClose)?.nativeElement.focus();
   });
 
   // Deny is focused first, so a stray Enter or Space never approves.
@@ -65,6 +94,7 @@ export class AppComponent implements OnDestroy {
 
   token = '';
   private sessionStartedAt = 0;
+  private searchTimer?: number;
   private readonly timer = window.setInterval(() => {
     if (!this.isSessionActive()) {
       this.sessionStartedAt = 0;
@@ -77,6 +107,73 @@ export class AppComponent implements OnDestroy {
 
   ngOnDestroy(): void {
     window.clearInterval(this.timer);
+    window.clearTimeout(this.searchTimer);
+  }
+
+  openMemory(): void {
+    this.memoryOpen.set(true);
+    this.session.listMemory(this.searchText());
+  }
+
+  closeMemory(): void {
+    if (!this.memoryOpen()) return;
+    window.clearTimeout(this.searchTimer);
+    this.cancelEdit();
+    this.searchText.set('');
+    this.memoryOpen.set(false);
+    window.setTimeout(() => this.memoryButton?.nativeElement.focus());
+  }
+
+  closeMemoryFromBackdrop(event: MouseEvent): void {
+    if (event.target === event.currentTarget) this.closeMemory();
+  }
+
+  onMemoryKeydown(event: KeyboardEvent): void {
+    this.trapFocus(event, this.memoryPanel?.nativeElement);
+  }
+
+  /** Waits for a pause in typing, so each keystroke does not ask the backend. */
+  onMemorySearch(value: string): void {
+    this.searchText.set(value);
+    window.clearTimeout(this.searchTimer);
+    this.searchTimer = window.setTimeout(() => this.session.listMemory(value), 200);
+  }
+
+  isEditing(item: MemoryItem): boolean {
+    const editing = this.editing();
+    return editing?.kind === item.kind && editing.id === item.id;
+  }
+
+  startEdit(item: MemoryItem): void {
+    this.editing.set({ kind: item.kind, id: item.id });
+    this.editText.set(item.text);
+    window.setTimeout(() => this.memoryPanel?.nativeElement.querySelector<HTMLInputElement>('.memory-edit')?.focus());
+  }
+
+  canSave(item: MemoryItem): boolean {
+    return editedText(this.editText(), item.text) !== null;
+  }
+
+  saveEdit(item: MemoryItem): void {
+    const text = editedText(this.editText(), item.text);
+    if (text === null) return;
+    this.session.editMemory(item.id, text);
+    this.cancelEdit(item);
+  }
+
+  /** Esc stops here, so it leaves the edit and not the whole panel. */
+  cancelEdit(item?: MemoryItem, event?: Event): void {
+    event?.stopPropagation();
+    this.editing.set(null);
+    if (item) window.setTimeout(() => this.memoryPanel?.nativeElement.querySelector<HTMLElement>(`[data-edit="${item.id}"]`)?.focus());
+  }
+
+  forget(item: MemoryItem): void {
+    this.session.forgetMemory(item.kind, item.id);
+  }
+
+  meta(item: MemoryItem): string {
+    return itemMeta(item);
   }
 
   openSettings(): void {
@@ -96,9 +193,11 @@ export class AppComponent implements OnDestroy {
   }
 
   onSettingsKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Tab') return;
-    const panel = this.settingsPanel?.nativeElement;
-    if (!panel) return;
+    this.trapFocus(event, this.settingsPanel?.nativeElement);
+  }
+
+  private trapFocus(event: KeyboardEvent, panel: HTMLElement | undefined): void {
+    if (event.key !== 'Tab' || !panel) return;
     const focusable = Array.from(panel.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled])'));
     if (!focusable.length) return;
     const first = focusable[0];

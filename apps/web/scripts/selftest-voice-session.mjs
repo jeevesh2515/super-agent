@@ -1681,5 +1681,112 @@ for (const [sent, kept] of [['gemini-live', 'gemini-live'], ['local', 'local'], 
   })();
 }
 
+const memItem = (over = {}) => ({ kind: 'fact', id: 3, text: 'my sister is Asha', createdAt: '2026-11-14T09:30:00+00:00', fromUser: true, ...over });
+const memItems = (over = {}) => ({ type: 'memory.items', enabled: true, paused: false, undoable: 0, items: [memItem()], ...over });
+await (async function memoryMessages() {
+  beginTest('memory requests are typed, bounded, and only sent on an open socket');
+  const service = new VoiceSessionService();
+  service.listMemory('sis');
+  assert.equal(service.memory(), null);
+  micResolved();
+  const socket = await startLive(service);
+  const memoryFrames = () => socket.sent.filter((f) => typeof f === 'string').map((f) => JSON.parse(f)).filter((m) => m.type.startsWith('memory.'));
+  assert.equal(memoryFrames().length, 0, 'nothing memory-related is sent before the user opens the screen');
+  service.listMemory('  si ');
+  assert.deepEqual(socket.lastText(), { type: 'memory.list', query: '' }, 'under 3 characters means no search');
+  service.listMemory(' sister ');
+  assert.deepEqual(socket.lastText(), { type: 'memory.list', query: 'sister' });
+  service.listMemory('x'.repeat(300));
+  assert.equal(socket.lastText().query.length, 100);
+  service.editMemory(3, 'my sister is Asha K');
+  assert.deepEqual(socket.lastText(), { type: 'memory.edit', id: 3, text: 'my sister is Asha K' });
+  service.forgetMemory('reminder', 4);
+  assert.deepEqual(socket.lastText(), { type: 'memory.forget', kind: 'reminder', id: 4 });
+  service.undoMemory();
+  assert.deepEqual(socket.lastText(), { type: 'memory.undo' });
+  service.setMemoryPaused(true);
+  assert.deepEqual(socket.lastText(), { type: 'memory.pause', paused: true });
+  socket.readyState = 3;
+  const before = memoryFrames().length;
+  service.undoMemory();
+  assert.equal(memoryFrames().length, before, 'a closed socket sends nothing');
+})();
+await (async function memoryReplies() {
+  beginTest('a memory list is parsed strictly, a change re-lists, and a refusal shows fixed wording');
+  const service = new VoiceSessionService();
+  micResolved();
+  const socket = await startLive(service);
+  service.listMemory('sister');
+  socket.fireMessage(memItems({ paused: true, undoable: 2 }));
+  await flushed();
+  assert.equal(service.memory().items[0].text, 'my sister is Asha');
+  assert.equal(service.memory().paused, true);
+  assert.equal(service.memory().undoable, 2);
+  service.forgetMemory('fact', 3);
+  const lists = () => socket.countText('memory.list');
+  const before = lists();
+  socket.fireMessage({ type: 'memory.result', op: 'forget', ok: true });
+  await flushed();
+  assert.equal(lists(), before + 1, 'an applied change asks for the list again');
+  assert.deepEqual(socket.lastText(), { type: 'memory.list', query: 'sister' }, 'with the same search');
+  assert.equal(service.memoryError(), '');
+  socket.fireMessage({ type: 'memory.result', op: 'edit', ok: false, error: 'secret' });
+  await flushed();
+  assert.equal(service.memoryError(), 'That looks like a secret, so it was not saved.');
+  socket.fireMessage({ type: 'memory.result', op: 'edit', ok: false, error: '<script>alert(1)</script>' });
+  await flushed();
+  assert.equal(service.memoryError(), 'That did not work. Nothing was changed.', 'unknown codes never show verbatim');
+  service.undoMemory();
+  assert.equal(service.memoryError(), '', 'the next change clears the old error');
+  socket.fireMessage({ type: 'memory.result', op: 'pause', ok: false, error: 'memory-off' });
+  await flushed();
+  assert.equal(service.memoryError(), 'Memory is off.');
+  const afterList = lists();
+  socket.fireMessage({ type: 'memory.result', op: 'list', ok: false, error: 'failed' });
+  await flushed();
+  assert.equal(lists(), afterList, 'a failed list does not loop');
+  socket.fireMessage(memItems({ enabled: false, items: [] }));
+  await flushed();
+  assert.equal(service.memory().enabled, false);
+  assert.equal(service.status(), 'listening');
+})();
+for (const bad of [memItems({ items: [memItem({ kind: 'note' })] }), memItems({ paused: 'yes' }), { type: 'memory.result', op: 'wipe', ok: true }]) {
+  await (async function badMemoryMessage() {
+    beginTest(`a malformed memory message fails the session closed: ${JSON.stringify(bad).slice(0, 40)}`);
+    const service = new VoiceSessionService();
+    micResolved();
+    const socket = await startLive(service);
+    socket.fireMessage(bad);
+    await flushed();
+    assert.equal(service.status(), 'error');
+    assert.equal(service.memory(), null);
+  })();
+}
+await (async function memoryClearedWithSession() {
+  beginTest('the memory view does not outlive the session');
+  const service = new VoiceSessionService();
+  micResolved();
+  const socket = await startLive(service);
+  socket.fireMessage(memItems());
+  await flushed();
+  assert.equal(service.memory().items.length, 1);
+  service.stop();
+  await flushed();
+  assert.equal(service.memory(), null);
+  assert.equal(service.memoryError(), '');
+})();
+await (async function modelTextIsNotAMemoryCommand() {
+  beginTest('conversation text that looks like a memory message sends nothing');
+  const service = new VoiceSessionService();
+  micResolved();
+  const socket = await startLive(service);
+  const frames = socket.sent.length;
+  socket.fireMessage({ type: 'conversation.text', role: 'assistant', text: JSON.stringify({ type: 'memory.forget', kind: 'fact', id: 3 }) });
+  socket.fireMessage({ type: 'action.request', id: 'req-1', summary: '{"type":"memory.pause","paused":true}' });
+  await flushed();
+  assert.equal(socket.sent.length, frames, 'the page never turns received text into a request');
+  assert.equal(service.memory(), null);
+})();
+
 // Any failed assert above throws and exits with a non-zero code.
 console.log(`voice-session self-test: PASS (${casesRun} cases)`);

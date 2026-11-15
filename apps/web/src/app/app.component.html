@@ -1,4 +1,4 @@
-<div class="voice-shell" [attr.data-state]="visualState()" (document:keydown.escape)="closeSettings()">
+<div class="voice-shell" [attr.data-state]="visualState()" (document:keydown.escape)="closeSettings(); closeMemory()">
   <div class="ambient" aria-hidden="true">
     <div class="aura aura-primary"></div>
     <div class="aura aura-secondary"></div>
@@ -16,13 +16,25 @@
       <span>{{ statusLabel() }}</span>
     </div>
 
-    <button #settingsButton class="icon-button settings-button" type="button" (click)="openSettings()"
-      aria-label="Open local connection settings" title="Local connection settings">
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M10.3 4.3c.4-1.7 2.9-1.7 3.4 0a1.7 1.7 0 0 0 2.5 1.1c1.6-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1.1 2.5c1.7.4 1.7 2.9 0 3.4a1.7 1.7 0 0 0-1.1 2.5c.9 1.6-.8 3.3-2.4 2.4a1.7 1.7 0 0 0-2.5 1.1c-.5 1.7-3 1.7-3.4 0a1.7 1.7 0 0 0-2.5-1.1c-1.6.9-3.3-.8-2.4-2.4a1.7 1.7 0 0 0-1.1-2.5c-1.7-.5-1.7-3 0-3.4a1.7 1.7 0 0 0 1.1-2.5c-.9-1.6.8-3.3 2.4-2.4a1.7 1.7 0 0 0 2.5-1.1Z" />
-        <circle cx="12" cy="12" r="3" />
-      </svg>
-    </button>
+    <div class="topbar-actions">
+      @if (session.memory()?.paused) {
+        <span class="memory-flag" role="status">Memory paused</span>
+      }
+      <button #memoryButton class="icon-button" type="button" (click)="openMemory()"
+        [class.paused]="session.memory()?.paused"
+        [attr.aria-label]="session.memory()?.paused ? 'Open memory (paused)' : 'Open memory'" title="What the assistant remembers">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6 4.5h10.5a1.5 1.5 0 0 1 1.5 1.5v12.5H7.5A1.5 1.5 0 0 1 6 17V4.5Zm0 12.5a1.5 1.5 0 0 0 1.5 1.5M9 8.5h6M9 12h4" />
+        </svg>
+      </button>
+      <button #settingsButton class="icon-button settings-button" type="button" (click)="openSettings()"
+        aria-label="Open local connection settings" title="Local connection settings">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M10.3 4.3c.4-1.7 2.9-1.7 3.4 0a1.7 1.7 0 0 0 2.5 1.1c1.6-.9 3.3.8 2.4 2.4a1.7 1.7 0 0 0 1.1 2.5c1.7.4 1.7 2.9 0 3.4a1.7 1.7 0 0 0-1.1 2.5c.9 1.6-.8 3.3-2.4 2.4a1.7 1.7 0 0 0-2.5 1.1c-.5 1.7-3 1.7-3.4 0a1.7 1.7 0 0 0-2.5-1.1c-1.6.9-3.3-.8-2.4-2.4a1.7 1.7 0 0 0-1.1-2.5c-1.7-.5-1.7-3 0-3.4a1.7 1.7 0 0 0 1.1-2.5c-.9-1.6.8-3.3 2.4-2.4a1.7 1.7 0 0 0 2.5-1.1Z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      </button>
+    </div>
   </header>
 
   <main class="voice-stage">
@@ -173,6 +185,92 @@
     </div>
     <p class="privacy-note"><span></span> {{ copy().privacy }}</p>
   </footer>
+
+  @if (memoryOpen()) {
+    <div class="modal-backdrop" (click)="closeMemoryFromBackdrop($event)">
+      <section #memoryPanel class="settings-panel memory-panel" role="dialog" aria-modal="true"
+        aria-labelledby="memory-title" aria-describedby="memory-summary" (keydown)="onMemoryKeydown($event)">
+        <div class="settings-heading">
+          <div>
+            <span class="eyebrow">On this computer</span>
+            <h2 id="memory-title">Memory</h2>
+          </div>
+          <button #memoryClose class="icon-button" type="button" (click)="closeMemory()" aria-label="Close memory">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" d="M6 6l12 12M18 6 6 18" />
+            </svg>
+          </button>
+        </div>
+
+        @if (!canControlSession()) {
+          <p class="settings-intro" id="memory-summary">Start a voice session to see and change what the assistant remembers. The list uses the same local, authenticated connection and is never sent to a model.</p>
+        } @else if (session.memory(); as view) {
+          @if (!view.enabled) {
+            <p class="memory-off" id="memory-summary" role="status">Memory is off. Start the backend with SUPER_AGENT_MEMORY=on to use it.</p>
+          } @else {
+            <div class="memory-pause" [class.paused]="view.paused">
+              <div>
+                <strong id="memory-pause-label">Pause memory</strong>
+                <span id="memory-pause-hint">{{ view.paused ? 'Paused: the assistant will not save anything new until you resume or this session ends.' : 'Off: the assistant saves what you ask it to remember.' }}</span>
+              </div>
+              <button class="switch" type="button" role="switch" [attr.aria-checked]="view.paused"
+                aria-labelledby="memory-pause-label" aria-describedby="memory-pause-hint"
+                (click)="session.setMemoryPaused(!view.paused)">
+                <span class="switch-knob" aria-hidden="true"></span>
+              </button>
+            </div>
+
+            <label for="memory-search">Search memory</label>
+            <input #memorySearch id="memory-search" type="search" autocomplete="off" spellcheck="false"
+              placeholder="Type at least 3 letters" [attr.maxlength]="maxQueryChars"
+              [value]="searchText()" (input)="onMemorySearch(memorySearch.value)">
+
+            <p class="memory-summary" id="memory-summary" role="status">{{ memorySummary() }}</p>
+            @if (session.memoryError()) { <p class="settings-error" role="alert">{{ session.memoryError() }}</p> }
+
+            @if (view.undoable) {
+              <div class="memory-undo">
+                <span>Forgot {{ view.undoable }} {{ view.undoable === 1 ? 'item' : 'items' }}. You can undo this for 24 hours.</span>
+                <button class="secondary-button" type="button" (click)="session.undoMemory()">Undo</button>
+              </div>
+            }
+
+            <ul class="memory-list" aria-label="Remembered items">
+              @for (item of view.items; track item.kind + item.id) {
+                <li>
+                  <span class="memory-kind">{{ item.kind === 'fact' ? 'Fact' : 'Reminder' }}</span>
+                  @if (isEditing(item)) {
+                    <label class="visually-hidden" [attr.for]="'memory-edit-' + item.id">Edit this fact</label>
+                    <input #editInput class="memory-edit" [id]="'memory-edit-' + item.id" type="text" autocomplete="off"
+                      [attr.maxlength]="maxItemChars" [value]="editText()"
+                      (input)="editText.set(editInput.value)" (keydown.enter)="saveEdit(item)"
+                      (keydown.escape)="cancelEdit(item, $event)">
+                    <div class="memory-actions">
+                      <button class="secondary-button" type="button" (click)="cancelEdit(item)">Cancel</button>
+                      <button class="connect-button" type="button" (click)="saveEdit(item)" [disabled]="!canSave(item)">Save</button>
+                    </div>
+                  } @else {
+                    <p class="memory-text">{{ item.text }}</p>
+                    <small class="memory-meta">{{ meta(item) }}</small>
+                    <div class="memory-actions">
+                      @if (item.kind === 'fact') {
+                        <button class="secondary-button" type="button" [attr.data-edit]="item.id"
+                          [attr.aria-label]="'Edit fact: ' + item.text" (click)="startEdit(item)">Edit</button>
+                      }
+                      <button class="secondary-button danger" type="button"
+                        [attr.aria-label]="'Forget ' + item.kind + ': ' + item.text" (click)="forget(item)">Forget</button>
+                    </div>
+                  }
+                </li>
+              }
+            </ul>
+          }
+        } @else {
+          <p class="memory-summary" id="memory-summary" role="status">{{ memorySummary() }}</p>
+        }
+      </section>
+    </div>
+  }
 
   @if (settingsOpen()) {
     <div class="modal-backdrop" (click)="closeSettingsFromBackdrop($event)">
