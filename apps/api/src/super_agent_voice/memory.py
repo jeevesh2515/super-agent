@@ -43,6 +43,10 @@ FULL_REMINDERS = f"error: there are {MAX_REMINDERS} open reminders already. Fini
 SHORT = "error: give at least 3 characters to match."
 TOO_BROAD = f"error: that matches more than {MAX_FORGET} items. Be more specific."
 AMBIGUOUS = "error: more than one reminder matches. Be more specific."
+PAUSED = "error: the user paused memory, so nothing was saved. Do not say it was."
+NOT_FOUND = "error: no such item."
+DUPLICATE = "error: that fact is already remembered."
+NOTHING = "error: nothing to restore."
 
 _DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 _DAY_INDEX = {name: i for i, day in enumerate(_DAYS) for name in (day, day[:3])}
@@ -63,14 +67,20 @@ _SECRET = re.compile("|".join((
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS facts(
-  id INTEGER PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT);
+  id INTEGER PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT,
+  from_user INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS reminders(
   id INTEGER PRIMARY KEY, text TEXT NOT NULL, due_at TEXT NOT NULL, repeat TEXT,
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
-  announced INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, deleted_at TEXT);
+  announced INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, deleted_at TEXT,
+  from_user INTEGER NOT NULL DEFAULT 0);
 """
 
 _lock = threading.Lock()  # the voice backend calls from worker threads
+# "Pause memory" in the console: model writes refuse until the owner resumes or the session ends.
+# shortcut: one flag for the whole process, because the backend allows one voice session at a time.
+_paused = threading.Event()
+_SCREEN_OPS = frozenset({"screen_list", "screen_edit", "screen_forget", "screen_undo", "screen_pause"})
 
 
 class _Refuse(Exception):
@@ -103,6 +113,9 @@ def _db() -> Iterator[sqlite3.Connection]:
         con = sqlite3.connect(DB_PATH)
         try:
             con.executescript(_SCHEMA)
+            for table in ("facts", "reminders"):  # stores made before the screen lack the column
+                if "from_user" not in {row[1] for row in con.execute(f"PRAGMA table_info({table})")}:
+                    con.execute(f"ALTER TABLE {table} ADD COLUMN from_user INTEGER NOT NULL DEFAULT 0")
             cutoff = _stamp(-timedelta(hours=_UNDO_HOURS))
             con.execute("DELETE FROM facts WHERE deleted_at < ?", (cutoff,))
             con.execute("DELETE FROM reminders WHERE deleted_at < ?", (cutoff,))
@@ -148,12 +161,6 @@ def _words(text: str) -> set[str]:
     return set(re.findall(r"\w{3,}", text.casefold()))
 
 
-def _rank(texts: list[str], query: str) -> list[tuple[int, str]]:
-    """(word overlap with the query, text), best first; the sort is stable so ties keep the input order."""
-    wanted = _words(query[:1000])
-    return sorted(((len(wanted & _words(t)), t) for t in texts), key=lambda pair: -pair[0])
-
-
 # Words too common to show that a note is about the question.
 _COMMON = frozenset(
     "the and you your yours that this these those what when where which who whom whose why how does did "
@@ -170,6 +177,49 @@ def _about(wanted: set[str], text: str) -> bool:
     """A question word matches a note word; longer words also match by prefix ("sisters", "sister")."""
     return any(a == b or (min(len(a), len(b)) >= 4 and (a.startswith(b) or b.startswith(a)))
                for a in wanted for b in _words(text))
+
+
+def _has_fts5() -> bool:
+    con = sqlite3.connect(":memory:")
+    try:
+        con.execute("CREATE VIRTUAL TABLE t USING fts5(x)")
+        return True
+    except sqlite3.Error:
+        return False
+    finally:
+        con.close()
+
+
+FTS5 = _has_fts5()  # some Python builds ship SQLite without FTS5; recall then uses word overlap
+_MAX_QUERY_WORDS = 20
+
+Row = tuple[int, str]  # id, text
+
+
+def _recall(rows: list[Row], query: str, common: bool = False) -> list[Row]:
+    """The rows that match the query, best first; ties keep the input order (newest first).
+
+    The index is built from the live rows each time, in a throwaway in-memory table, so it
+    cannot go stale: an edit, a forget or an undo is seen on the next search, and a forgotten
+    row is never in it. The query is cut into plain words and each is quoted, so punctuation,
+    quotes and the words AND, OR, NOT and NEAR never reach the FTS5 query syntax.
+    """
+    wanted = _words(query[:1000]) - (_COMMON if common else frozenset())
+    if not wanted:
+        return []
+    if not FTS5:
+        ranked = sorted(rows, key=lambda row: -len(wanted & _words(row[1])))
+        return [row for row in ranked if (_about(wanted, row[1]) if common else wanted & _words(row[1]))]
+    con = sqlite3.connect(":memory:")
+    try:
+        con.execute("CREATE VIRTUAL TABLE f USING fts5(text, tokenize='porter unicode61')")
+        con.executemany("INSERT INTO f(rowid, text) VALUES (?, ?)", rows)
+        match = " OR ".join(f'"{word}"' for word in sorted(wanted)[:_MAX_QUERY_WORDS])
+        found = [id_ for (id_,) in con.execute("SELECT rowid FROM f WHERE f MATCH ? ORDER BY bm25(f), rowid DESC", (match,))]
+    finally:
+        con.close()
+    text = dict(rows)
+    return [(id_, text[id_]) for id_ in found]
 
 
 # --- time ---------------------------------------------------------------
@@ -323,7 +373,7 @@ def _facts(db: sqlite3.Connection) -> list[tuple[int, str]]:
 # --- public API ---------------------------------------------------------
 
 @_tool
-def remember_fact(text: str) -> str:
+def remember_fact(text: str, from_user: bool = False) -> str:
     text = _text(text)
     with _db() as db:
         known = [t for _, t in _facts(db)]
@@ -331,12 +381,12 @@ def remember_fact(text: str) -> str:
             return f"Already remembered: {text}"
         if len(known) >= MAX_FACTS:
             raise _Refuse(FULL_FACTS)
-        db.execute("INSERT INTO facts(text, created_at) VALUES (?, ?)", (text, _stamp()))
+        db.execute("INSERT INTO facts(text, created_at, from_user) VALUES (?, ?, ?)", (text, _stamp(), from_user))
     return f"Remembered: {text}"
 
 
 @_tool
-def add_reminder(text: str, when: str, now: datetime | None = None) -> str:
+def add_reminder(text: str, when: str, now: datetime | None = None, from_user: bool = False) -> str:
     text = _text(text)
     try:
         due, repeat = parse_when(when, now or _local_now())
@@ -345,8 +395,8 @@ def add_reminder(text: str, when: str, now: datetime | None = None) -> str:
     with _db() as db:
         if len(_reminders(db)) >= MAX_REMINDERS:
             raise _Refuse(FULL_REMINDERS)
-        db.execute("INSERT INTO reminders(text, due_at, repeat, created_at) VALUES (?, ?, ?, ?)",
-                   (text, due.isoformat(), repeat, _stamp()))
+        db.execute("INSERT INTO reminders(text, due_at, repeat, created_at, from_user) VALUES (?, ?, ?, ?, ?)",
+                   (text, due.isoformat(), repeat, _stamp(), from_user))
     return f"Reminder set for {_when(due)}{_every(repeat)}: {text}"
 
 
@@ -355,8 +405,8 @@ def list_memory(query: str | None = None, limit: int = 10) -> str:
     limit = max(1, min(30, limit))
     query = _clean(query) if query else ""
     with _db() as db:
-        facts = [t for _, t in _facts(db)]
-    shown = [t for score, t in _rank(facts, query) if score or not query][:limit]
+        facts = _facts(db)
+    shown = [t for _, t in (_recall(facts, query) if query else facts)][:limit]
     if not shown:
         return "No matching facts." if query else "No facts stored."
     return f"{len(shown)} fact(s):\n" + "\n".join(f"- {t}" for t in shown)
@@ -413,14 +463,20 @@ def forget(match: str) -> str:
     return f"Forgot {len(hits)}: " + "; ".join(t for _, _, t in hits)
 
 
-@_tool
-def undo_forget() -> str:
+def _last_forget(db: sqlite3.Connection) -> str | None:
+    """The stamp of the latest forget still inside the undo window, which names its batch."""
     cutoff = _stamp(-timedelta(hours=_UNDO_HOURS))
+    latest = db.execute("SELECT max(s) FROM (SELECT max(deleted_at) AS s FROM facts "
+                        "UNION ALL SELECT max(deleted_at) FROM reminders)").fetchone()[0]
+    return latest if latest is not None and latest >= cutoff else None
+
+
+def _restore() -> list[str]:
+    """Brings back the latest forget batch and returns its texts; none if there is nothing to restore."""
     with _db() as db:
-        latest = db.execute("SELECT max(s) FROM (SELECT max(deleted_at) AS s FROM facts "
-                            "UNION ALL SELECT max(deleted_at) FROM reminders)").fetchone()[0]
-        if latest is None or latest < cutoff:
-            return "Nothing to restore."
+        latest = _last_forget(db)
+        if latest is None:
+            return []
         facts = db.execute("SELECT text FROM facts WHERE deleted_at = ?", (latest,)).fetchall()
         reminders = db.execute("SELECT text FROM reminders WHERE deleted_at = ?", (latest,)).fetchall()
         if len(_facts(db)) + len(facts) > MAX_FACTS:
@@ -429,7 +485,13 @@ def undo_forget() -> str:
             raise _Refuse(FULL_REMINDERS)
         db.execute("UPDATE facts SET deleted_at = NULL WHERE deleted_at = ?", (latest,))
         db.execute("UPDATE reminders SET deleted_at = NULL WHERE deleted_at = ?", (latest,))
-    return f"Restored {len(facts) + len(reminders)}: " + "; ".join(t for (t,) in facts + reminders)
+    return [t for (t,) in facts + reminders]
+
+
+@_tool
+def undo_forget() -> str:
+    restored = _restore()
+    return f"Restored {len(restored)}: " + "; ".join(restored) if restored else "Nothing to restore."
 
 
 def due(now: datetime | None = None) -> list[tuple[int, str]]:
@@ -465,11 +527,11 @@ def context(query: str, now: datetime | None = None) -> str:
         return ""
     now = now or _local_now()
     with _db() as db:
-        facts = [t for _, t in _facts(db)]
+        facts = _facts(db)
         soon = [r for r in _reminders(db) if now <= r[2] <= now + timedelta(hours=48)]
     wanted = _words(query[:1000]) - _COMMON
-    facts = [t for _, t in _rank(facts, query) if _about(wanted, t)][:3] or (
-        facts[:5] if _RECALL.search(query.casefold()) else [])
+    facts = [t for _, t in _recall(facts, query, common=True)][:3] or (
+        [t for _, t in facts[:5]] if _RECALL.search(query.casefold()) else [])
     soon = [r for r in soon if wanted & _REMINDER_WORDS or _about(wanted, r[1])][:5]
     lines: list[str] = []
     if facts:
@@ -479,6 +541,101 @@ def context(query: str, now: datetime | None = None) -> str:
         lines += ["Upcoming reminders:"]
         lines += [f"- {_when(when.astimezone(now.tzinfo))}{_every(repeat)}: {text}" for _, text, when, repeat, _ in soon]
     return "\n".join(lines)
+
+
+# --- the owner's screen ---------------------------------------------------
+# Called only by memory_screen.py for messages from the browser socket. None of these is a model
+# tool: they are not in TOOLS, NAMES or _CALLS, so model output cannot reach them.
+
+_CODES = {BAD_TEXT: "bad-text", SECRET: "secret", FULL_FACTS: "full", FULL_REMINDERS: "full",
+          NOT_FOUND: "not-found", DUPLICATE: "duplicate", NOTHING: "nothing-to-restore"}
+
+
+def _owner(op: str) -> Callable[[Callable[..., None]], Callable[..., str]]:
+    """Runs one change the owner asked for and returns "" or a fixed error code, never content."""
+    def decorate(fn: Callable[..., None]) -> Callable[..., str]:
+        @wraps(fn)
+        def wrapper(*args: object) -> str:
+            try:
+                fn(*args)
+                code = ""
+            except _Refuse as refusal:
+                code = _CODES.get(str(refusal), "failed")
+            except Exception:
+                code = "failed"
+            _audit(op, "error" if code else "ok")
+            return code
+        return wrapper
+    return decorate
+
+
+def set_paused(paused: bool) -> None:
+    _paused.set() if paused else _paused.clear()
+    _audit("screen_pause", "ok")
+
+
+def reset_pause() -> None:
+    """Called when a session starts or ends, so a pause never carries over. Not logged: nothing was asked."""
+    _paused.clear()
+
+
+def is_paused() -> bool:
+    return _paused.is_set()
+
+
+def view(query: str = "") -> dict:
+    """Everything stored, newest facts first then reminders soonest first, or the matches for a query."""
+    _audit("screen_list", "ok")
+    if not DB_PATH.exists():  # looking must not create the store for someone who never used it
+        return {"items": [], "undoable": 0}
+    with _db() as db:
+        facts = db.execute("SELECT id, text, created_at, from_user FROM facts "
+                           "WHERE deleted_at IS NULL ORDER BY id DESC").fetchall()
+        reminders = db.execute("SELECT id, text, created_at, from_user, due_at, repeat FROM reminders "
+                               "WHERE status = 'open' AND deleted_at IS NULL ORDER BY due_at").fetchall()
+        latest = _last_forget(db)
+        undoable = 0 if latest is None else sum(db.execute(
+            f"SELECT count(*) FROM {table} WHERE deleted_at = ?", (latest,)).fetchone()[0]
+            for table in ("facts", "reminders"))
+    query = _clean(query)
+    items: list[dict] = []
+    for kind, rows in (("fact", facts), ("reminder", reminders)):
+        by_id = {row[0]: row for row in rows}
+        order = [id_ for id_, _ in _recall([(row[0], row[1]) for row in rows], query)] if query else list(by_id)
+        for id_ in order:
+            _, text, created, from_user, *reminder = by_id[id_]
+            item = {"kind": kind, "id": id_, "text": text, "createdAt": created, "fromUser": bool(from_user)}
+            if reminder:
+                item |= {"dueAt": reminder[0], "repeat": reminder[1]}
+            items.append(item)
+    return {"items": items, "undoable": undoable}
+
+
+@_owner("screen_edit")
+def edit_fact(id_: int, text: str) -> None:
+    text = _text(text)
+    with _db() as db:
+        if db.execute("SELECT 1 FROM facts WHERE id = ? AND deleted_at IS NULL", (id_,)).fetchone() is None:
+            raise _Refuse(NOT_FOUND)
+        if any(other != id_ and known.casefold() == text.casefold() for other, known in _facts(db)):
+            raise _Refuse(DUPLICATE)
+        db.execute("UPDATE facts SET text = ? WHERE id = ?", (text, id_))
+
+
+@_owner("screen_forget")
+def forget_item(kind: str, id_: int) -> None:
+    table = "reminders" if kind == "reminder" else "facts"
+    live = "deleted_at IS NULL" + (" AND status = 'open'" if kind == "reminder" else "")
+    with _db() as db:
+        if db.execute(f"SELECT 1 FROM {table} WHERE id = ? AND {live}", (id_,)).fetchone() is None:
+            raise _Refuse(NOT_FOUND)
+        db.execute(f"UPDATE {table} SET deleted_at = ? WHERE id = ?", (_stamp(), id_))
+
+
+@_owner("screen_undo")
+def restore() -> None:
+    if not _restore():
+        raise _Refuse(NOTHING)
 
 
 # --- tool schemas and dispatch -------------------------------------------
@@ -511,6 +668,7 @@ TOOLS = [
 ]
 NAMES = frozenset(schema["function"]["name"] for schema in TOOLS)
 WRITES = NAMES - {"list_memory", "list_reminders"}
+_STAMPED = frozenset({"remember_fact", "add_reminder"})  # the tools that record where an item came from
 AFTER_READ = ("error: memory cannot change in a turn that read files, notes, mail or calendar. "
               "Tell the user to ask again in a new sentence.")
 _PARAMS = {s["function"]["name"]: s["function"]["parameters"] for s in TOOLS}
@@ -532,27 +690,31 @@ def _valid(arguments: dict, params: dict) -> bool:
         for key, value in arguments.items())
 
 
-def run(name: object, arguments: object) -> str:
-    """The only code a memory model call can reach. Unknown names do nothing."""
-    result = _run(name, arguments)
+def run(name: object, arguments: object, from_user: bool = False) -> str:
+    """The only code a memory model call can reach. Unknown names do nothing.
+
+    from_user is set by the caller's gate, never by the model: the user's own words asked for this write."""
+    result = _run(name, arguments, from_user)
     _audit(name, result)
     return result
 
 
-def _run(name: object, arguments: object) -> str:
+def _run(name: object, arguments: object, from_user: bool) -> str:
     if not isinstance(name, str) or name not in NAMES:
         return NO_TOOL
     if not isinstance(arguments, dict) or not _valid(arguments, _PARAMS[name]):
         return BAD_ARGS
+    if name in WRITES and _paused.is_set():
+        return PAUSED
     try:
-        return _CALLS[name](**arguments)
+        return _CALLS[name](**arguments, **({"from_user": from_user} if name in _STAMPED else {}))
     except Exception:
         return FAILED  # never the exception text, which could hold stored content
 
 
 def _audit(name: object, result: str) -> None:
     """Appends time, tool name, and outcome. Never arguments or content (REQ-14)."""
-    shown = name if isinstance(name, str) and name in NAMES else "unknown"
+    shown = name if isinstance(name, str) and name in NAMES | _SCREEN_OPS else "unknown"
     outcome = "error" if result.startswith("error") else "ok"
     line = f"{datetime.now().astimezone().strftime('%Y-%m-%dT%H:%M:%S%z')} {shown} {outcome}\n"
     try:

@@ -164,7 +164,8 @@ async def call_tool(name: object, arguments: object) -> str:
         # Every memory write needs a request in the user's own words; a write with no rule is refused.
         if heard is not None and name in memory.WRITES and not (name in _ASKED and _ASKED[name].search(fold(heard))):
             return NOT_ASKED
-        return await asyncio.to_thread(memory.run, name, arguments)
+        # A write reaches here only through the request-word gate above, so it came from the user's words.
+        return await asyncio.to_thread(memory.run, name, arguments, heard is not None)
     if name in actions.NAMES:
         if not actions_enabled():
             return "error: no such tool."
