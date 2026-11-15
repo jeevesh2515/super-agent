@@ -21,6 +21,7 @@ from .adapter import (
     VoiceAdapter,
 )
 from .config import VoiceConfig
+from . import memory, memory_screen
 from .gemini_adapter import TOOL_NAME_ALLOWLIST
 
 # States only, never content (REQ-12). uvicorn configures only its own loggers, so
@@ -566,6 +567,7 @@ async def _voice_socket(
         await websocket.close(code=1013)
         return
 
+    memory.reset_pause()  # a pause lasts for one session
     adapter: VoiceAdapter | None = None
     tasks: list[asyncio.Task[None]] = []
     failure = None
@@ -616,6 +618,7 @@ async def _voice_socket(
     except Exception:
         failure = _SessionFailure("session-failed")
     finally:
+        memory.reset_pause()
         if adapter is not None:
             log.info("voice: session closed adapter=%s", adapter.name)
         record = _SessionTeardown(
@@ -848,6 +851,12 @@ async def _receive(
             # Only the local and Gemini adapters have actions; for the others a decision is a harmless no-op.
             if (decide := getattr(adapter, "decide_action", None)) is not None:
                 await decide(id_, allow)
+        elif isinstance(event, str) and event.startswith("memory."):
+            # Only the browser's own socket reaches this; nothing the model or a tool says does.
+            reply = await memory_screen.handle(control)
+            if reply is None:
+                raise _SessionFailure("invalid-control")
+            outbound.put(_Outbound(reply))
         elif event == "session.stop":
             raise _Stopped()
         else:
