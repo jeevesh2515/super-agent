@@ -51,6 +51,13 @@ const PROVIDER_COPY: Record<string, ProviderCopy> = {
     privacy: 'Gemini Live active. Microphone audio goes to Google. Speak nothing personal.',
     settingsTitle: 'Gemini Live (cloud)', settingsNote: 'Microphone audio goes to Google. Speak nothing personal.',
   },
+  'openai-realtime': {
+    badge: 'OpenAI Realtime (cloud)', tag: 'Cloud',
+    micStep: 'Microphone audio is sent to OpenAI',
+    replyStep: 'OpenAI Realtime reply', replyNote: 'Testing only. Paid API, billed by usage.',
+    privacy: 'OpenAI Realtime active. Microphone audio goes to OpenAI. Speak nothing personal.',
+    settingsTitle: 'OpenAI Realtime (cloud)', settingsNote: 'Microphone audio goes to OpenAI. Speak nothing personal.',
+  },
 };
 
 // Never default to a local or fake claim: before connecting, or for an unknown provider, say nothing about where audio goes.
@@ -68,13 +75,14 @@ export function providerCopy(provider: string): ProviderCopy {
 
 // The echo wording is only true for the fake adapter; the local model speaks its own reply.
 export function statusLabel(status: string, provider = ''): string {
-  if (status === 'speaking' && (provider === 'local' || provider === 'gemini-live')) return 'Speaking';
+  if (status === 'speaking' && ['local', 'gemini-live', 'openai-realtime'].includes(provider)) return 'Speaking';
   return STATUS_LABELS[status] ?? 'Unavailable';
 }
 
 export function pipelineSummary(status: string, provider = ''): string {
   if (status === 'speaking' && provider === 'local') return 'Playing the local reply';
   if (status === 'speaking' && provider === 'gemini-live') return 'Playing the Gemini reply';
+  if (status === 'speaking' && provider === 'openai-realtime') return 'Playing the OpenAI reply';
   return PIPELINE_SUMMARIES[status] ?? 'Local voice path';
 }
 

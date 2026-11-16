@@ -102,6 +102,29 @@ $env:PYTHONPATH = "apps\api\src"
 Startup fails if `GEMINI_API_KEY` is missing. Tool calls and transcripts need a
 live run to confirm; the offline tests use fakes only.
 
+## OpenAI Realtime mode (opt-in, testing only)
+
+`SUPER_AGENT_ADAPTER=openai` sends your real microphone audio to OpenAI's
+Realtime API. It is a paid API billed by usage; a ChatGPT subscription does not
+cover it. Speak nothing personal or sensitive. The model has no tools in this
+slice, and the console shows transcripts for the session only. Fake stays the
+default. Approval status:
+[record](../docs/approvals/openai-realtime-testing-exception.md). The key comes
+from the process environment only; never put it in a file in the repository.
+
+```bash
+# keep the key in a mode 0600 file outside the repository
+OPENAI_API_KEY="$(cat ~/.super-agent/openai-key)" SUPER_AGENT_ADAPTER=openai PYTHONPATH=apps/api/src \
+  ~/.super-agent/venv/bin/python -m uvicorn super_agent_voice.app:create_app --factory \
+  --host 127.0.0.1 --port 8000 --ws-max-size 65600 --ws-max-queue 4
+# optional: SUPER_AGENT_OPENAI_MODEL=gpt-realtime-2.1
+```
+
+Startup fails if `OPENAI_API_KEY` is missing. The session starts only after
+OpenAI accepts the configuration. This mode has offline tests with a fake
+socket only; no live run has been recorded yet, and `live_check` does not
+cover it.
+
 ## Synthetic live check (opt-in)
 
 Sends synthetic speech to Google's free tier, which may use inputs for

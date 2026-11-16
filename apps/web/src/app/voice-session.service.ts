@@ -178,8 +178,9 @@ export class VoiceSessionService {
       text?: unknown;
     };
     if (message.type === 'session.ready') {
-      // Only these may get the microphone; the console labels gemini-live as a cloud provider.
-      if (message.provider !== 'fake' && message.provider !== 'local' && message.provider !== 'gemini-live') {
+      // Only these may get the microphone; the console labels the last two as cloud providers.
+      const provider = message.provider ?? '';
+      if (!['fake', 'local', 'gemini-live', 'openai-realtime'].includes(provider)) {
         this.fail('Unexpected voice provider. Local capture stays off.');
         return;
       }
@@ -190,7 +191,7 @@ export class VoiceSessionService {
         return;
       }
       this.capturing = true;
-      this.provider.set(message.provider);
+      this.provider.set(provider);
       this.epochs.onReady(message.playbackEpoch);
       try {
         await this.startCapture(socket, generation);

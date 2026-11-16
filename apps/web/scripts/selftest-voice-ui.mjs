@@ -65,7 +65,12 @@ equal(ui.providerCopy('fake').badge, 'Fake echo adapter');
 equal(ui.providerCopy('local').privacy, 'Local model active. Microphone audio stays local.');
 equal(ui.providerCopy('gemini-live').tag, 'Cloud');
 equal(ui.providerCopy('gemini-live').badge, 'Gemini Live (cloud)');
-for (const p of ['gemini-live', '', 'unknown']) {
+equal(ui.statusLabel('speaking', 'openai-realtime'), 'Speaking');
+equal(ui.statusLabel('speaking', 'fake') === 'Speaking', false);
+equal(ui.statusLabel('speaking', 'unknown') === 'Speaking', false);
+equal(ui.pipelineSummary('speaking', 'openai-realtime'), 'Playing the OpenAI reply');
+equal(ui.providerCopy('openai-realtime').tag, 'Cloud');
+for (const p of ['gemini-live', 'openai-realtime', '', 'unknown']) {
   const text = JSON.stringify(ui.providerCopy(p)).toLowerCase();
   equal(text.includes('stays local') || text.includes('stays on this device'), false);
   equal(text.includes('local only'), false);

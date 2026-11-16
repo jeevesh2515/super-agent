@@ -48,6 +48,7 @@ class VoiceConfig:
     token_max_age_seconds: float = 86400.0
     # Live model ID, overridable because Google retires preview models.
     gemini_model: str = "gemini-3.8-live"
+    openai_model: str = "gpt-realtime-2.1"
 
     @classmethod
     def from_environment(cls) -> "VoiceConfig":
@@ -71,6 +72,7 @@ class VoiceConfig:
             local_token=token,
             token_max_age_seconds=max_age,
             gemini_model=os.environ.get("SUPER_AGENT_GEMINI_MODEL") or cls.gemini_model,
+            openai_model=os.environ.get("SUPER_AGENT_OPENAI_MODEL") or cls.openai_model,
         )
 
 

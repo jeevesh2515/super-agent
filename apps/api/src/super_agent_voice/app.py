@@ -179,7 +179,9 @@ def create_app(
     adapter_factory: AdapterFactory | None = None,
 ) -> FastAPI:
     settings = config or VoiceConfig.from_environment()
-    adapter_factory = adapter_factory or _adapter_from_environment(settings.gemini_model)
+    adapter_factory = adapter_factory or _adapter_from_environment(
+        settings.gemini_model, settings.openai_model,
+    )
     # Fails closed before any session can run (teardown addendum 4.1).
     for name in (
         "teardown_seconds", "token_max_age_seconds", "auth_failure_window_seconds",
@@ -210,7 +212,9 @@ def create_app(
     return app
 
 
-def _adapter_from_environment(gemini_model: str = VoiceConfig.gemini_model) -> AdapterFactory:
+def _adapter_from_environment(
+    gemini_model: str = VoiceConfig.gemini_model, openai_model: str = VoiceConfig.openai_model,
+) -> AdapterFactory:
     choice = os.environ.get("SUPER_AGENT_ADAPTER", "fake")
     if choice == "fake":
         return FakeVoiceAdapter
@@ -231,8 +235,21 @@ def _adapter_from_environment(gemini_model: str = VoiceConfig.gemini_model) -> A
 
         gemini_factory.name = GeminiLiveAdapter.name  # type: ignore[attr-defined]
         return gemini_factory
+    if choice == "openai":
+        # Real microphone audio goes to OpenAI, a paid API: opt-in, testing only (see
+        # docs/approvals/openai-realtime-testing-exception.md). Same key rules as Gemini.
+        openai_key = os.environ.get("OPENAI_API_KEY", "")
+        if not openai_key:
+            raise RuntimeError("SUPER_AGENT_ADAPTER=openai needs OPENAI_API_KEY in the process environment")
+        from .openai_adapter import OpenAIRealtimeAdapter
+
+        def openai_factory() -> OpenAIRealtimeAdapter:
+            return OpenAIRealtimeAdapter(openai_model, openai_key)
+
+        openai_factory.name = OpenAIRealtimeAdapter.name  # type: ignore[attr-defined]
+        return openai_factory
     # Fail closed: an unknown name never falls back to some other provider.
-    raise RuntimeError("SUPER_AGENT_ADAPTER must be 'fake', 'local' or 'gemini'")
+    raise RuntimeError("SUPER_AGENT_ADAPTER must be 'fake', 'local', 'gemini' or 'openai'")
 
 
 def _frame_logging_enabled() -> bool:

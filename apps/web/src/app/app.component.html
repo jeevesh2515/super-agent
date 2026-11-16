@@ -68,7 +68,7 @@
     </div>
     <p class="spectrum-label">Microphone level, not speech detection</p>
 
-    @if (session.provider() === 'local' || session.provider() === 'gemini-live') {
+    @if (session.provider() === 'local' || session.provider() === 'gemini-live' || session.provider() === 'openai-realtime') {
       <section class="conversation" role="log" aria-live="polite" aria-label="Conversation transcript">
         <ol #transcript>
           @for (entry of session.conversation(); track $index) {

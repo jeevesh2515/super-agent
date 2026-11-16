@@ -1589,7 +1589,7 @@ await (async function bargeInCountResetsWhenPlaybackStops() {
   assert.equal(socket.countText('playback.interrupt'), 1);
 })();
 
-for (const [sent, kept] of [['gemini-live', 'gemini-live'], ['local', 'local'], ['fake', 'fake']]) {
+for (const [sent, kept] of [['gemini-live', 'gemini-live'], ['openai-realtime', 'openai-realtime'], ['local', 'local'], ['fake', 'fake']]) {
   await (async function providerAllowlist() {
     beginTest(`provider ${sent} is shown as ${kept}`);
     const service = new VoiceSessionService();
