@@ -3,6 +3,7 @@ import asyncio
 import json
 import re
 import sqlite3
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -127,6 +128,70 @@ def test_edit_fact_cleans_refuses_and_keeps_the_original_on_error():
     assert "hunter2" not in " ".join(texts())
 
 
+def prev_columns() -> list[tuple]:
+    con = sqlite3.connect(memory.DB_PATH)
+    try:
+        return con.execute("SELECT prev_text, prev_at FROM facts").fetchall()
+    finally:
+        con.close()
+
+
+def test_an_edit_can_be_undone_and_only_the_latest_edit_is_kept():
+    fact = the_fact()
+    assert "editUndoable" not in memory.view()["items"][0]
+    assert memory.restore_edit(fact) == "nothing-to-restore"
+    memory.edit_fact(fact, "my sister Asha lives in York")
+    memory.edit_fact(fact, "my sister Asha lives in Rome")
+    assert memory.view()["items"][0]["editUndoable"] is True
+    assert memory.restore_edit(fact) == ""
+    assert texts() == ["my sister Asha lives in York"]  # one step back, not two
+    assert "editUndoable" not in memory.view()["items"][0]
+    assert memory.restore_edit(fact) == "nothing-to-restore"
+    assert memory.edit_fact(fact, "my sister Asha lives in York") == ""  # same text: no new undo step
+    assert "editUndoable" not in memory.view()["items"][0]
+
+
+def test_the_text_before_an_edit_is_never_in_search_or_recall_and_is_erased_after_24_hours():
+    fact = the_fact()
+    memory.edit_fact(fact, "my sister Asha lives in York")
+    assert texts("Leeds") == [] and "Leeds" not in memory.list_memory() and "Leeds" not in memory.context("sister Leeds")
+    assert "Leeds" not in json.dumps(memory.view())
+    assert [t for t, _ in prev_columns()] == ["my sister Asha lives in Leeds"]
+    con = sqlite3.connect(memory.DB_PATH)  # the window ends
+    con.execute("UPDATE facts SET prev_at = ?", (memory._stamp(-timedelta(hours=25)),))
+    con.commit()
+    con.close()
+    assert "editUndoable" not in memory.view()["items"][0]
+    assert prev_columns() == [(None, None)]
+    assert memory.restore_edit(fact) == "nothing-to-restore"
+    assert texts() == ["my sister Asha lives in York"]
+
+
+def test_undo_edit_refuses_a_duplicate_a_forgotten_fact_and_a_bad_id():
+    fact = the_fact()
+    memory.edit_fact(fact, "my sister Asha lives in York")
+    memory.remember_fact("MY SISTER ASHA LIVES IN LEEDS")  # now someone else holds the earlier text
+    assert memory.restore_edit(fact) == "duplicate"
+    assert "my sister Asha lives in York" in texts()
+    memory.forget_item("fact", fact)
+    assert memory.restore_edit(fact) == "nothing-to-restore"
+    assert memory.restore_edit(9999) == "nothing-to-restore"
+    memory.restore()  # forget undone: the edit is still undoable inside the window
+    assert any(i.get("editUndoable") for i in memory.view()["items"])
+
+
+def test_a_store_made_before_the_edit_undo_columns_is_migrated():
+    memory.DB_PATH.parent.mkdir(parents=True)
+    con = sqlite3.connect(memory.DB_PATH)
+    con.execute("CREATE TABLE facts(id INTEGER PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL, "
+                "deleted_at TEXT, from_user INTEGER NOT NULL DEFAULT 0)")
+    con.execute("INSERT INTO facts(text, created_at) VALUES ('old fact', '2026-01-01T00:00:00.000000+00:00')")
+    con.commit()
+    con.close()
+    fact = memory.view()["items"][0]["id"]
+    assert memory.edit_fact(fact, "new fact") == "" and memory.restore_edit(fact) == "" and texts() == ["old fact"]
+
+
 def test_edit_fact_cannot_touch_a_forgotten_fact_or_a_reminder():
     fact = the_fact()
     memory.add_reminder("call home", "in 20 minutes")
@@ -163,7 +228,8 @@ def test_restore_will_not_exceed_the_fact_cap():
 
 
 def test_the_owner_functions_are_not_reachable_as_model_tools():
-    for name in ("edit_fact", "forget_item", "restore", "view", "set_paused", "reset_pause", "screen_edit"):
+    for name in ("edit_fact", "restore_edit", "forget_item", "restore", "view", "set_paused", "reset_pause", "screen_edit",
+                 "screen_undo_edit"):
         assert name not in memory.NAMES and name not in memory._CALLS
         assert memory.run(name, {"text": "x"}) == memory.NO_TOOL
     assert not any(word in schema["function"]["name"] for schema in memory.TOOLS for word in ("edit", "pause"))
@@ -174,6 +240,7 @@ def test_screen_audit_lines_hold_only_time_operation_and_outcome():
     fact = memory.view()["items"][0]["id"]
     memory.edit_fact(fact, "my dentist is Dr Marlow")
     memory.edit_fact(fact, "my password is hunter2")
+    memory.restore_edit(fact)
     memory.forget_item("fact", fact)
     memory.restore()
     memory.set_paused(True)
@@ -182,7 +249,8 @@ def test_screen_audit_lines_hold_only_time_operation_and_outcome():
     parsed = [LINE.match(line) for line in log.splitlines()]
     assert all(parsed)
     assert [(m[1], m[2]) for m in parsed] == [
-        ("screen_list", "ok"), ("screen_edit", "ok"), ("screen_edit", "error"), ("screen_forget", "ok"),
+        ("screen_list", "ok"), ("screen_edit", "ok"), ("screen_edit", "error"), ("screen_undo_edit", "ok"),
+        ("screen_forget", "ok"),
         ("screen_undo", "ok"), ("screen_pause", "ok")]
     for text in ("Zebediah", "Quill", "Marlow", "hunter2", "password", "dentist"):
         assert text not in log
@@ -215,6 +283,13 @@ def test_list_edit_forget_undo_and_pause_on_the_open_socket():
         assert ask(websocket, type="memory.edit", id=fact, text="my sister Asha lives in York") == {
             "type": "memory.result", "op": "edit", "ok": True}
         assert texts("york") == ["my sister Asha lives in York"]
+
+        assert ask(websocket, type="memory.list", query="")["items"][0]["editUndoable"] is True
+        assert ask(websocket, type="memory.undo_edit", id=fact) == {"type": "memory.result", "op": "undo_edit", "ok": True}
+        assert ask(websocket, type="memory.undo_edit", id=fact) == {
+            "type": "memory.result", "op": "undo_edit", "ok": False, "error": "nothing-to-restore"}
+        assert texts("leeds") == ["my sister Asha lives in Leeds"]
+        assert ask(websocket, type="memory.edit", id=fact, text="my sister Asha lives in York")["ok"] is True
 
         assert ask(websocket, type="memory.forget", kind="fact", id=fact) == {
             "type": "memory.result", "op": "forget", "ok": True}
@@ -331,6 +406,12 @@ def test_memory_off_refuses_every_message_and_the_list_says_so(monkeypatch, valu
     {"type": "memory.forget", "kind": "fact", "id": None},
     {"type": "memory.forget", "kind": "fact", "id": 1, "all": True},
     {"type": "memory.undo", "id": 1},
+    {"type": "memory.undo_edit"},
+    {"type": "memory.undo_edit", "id": True},
+    {"type": "memory.undo_edit", "id": "1"},
+    {"type": "memory.undo_edit", "id": 0},
+    {"type": "memory.undo_edit", "id": 2**31},
+    {"type": "memory.undo_edit", "id": 1, "text": "x"},
     {"type": "memory.pause"},
     {"type": "memory.pause", "paused": 1},
     {"type": "memory.pause", "paused": "true"},
@@ -360,6 +441,7 @@ def test_an_oversized_message_fails_closed():
     {"type": "memory.edit", "id": 1, "text": "changed"},
     {"type": "memory.forget", "kind": "fact", "id": 1},
     {"type": "memory.undo"},
+    {"type": "memory.undo_edit", "id": 1},
     {"type": "memory.pause", "paused": True},
     {"type": "memory.list", "query": ""},
 ])
@@ -378,7 +460,7 @@ def test_text_from_the_model_cannot_send_memory_messages():
     fact = the_fact()
     hostile = [json.dumps(m) for m in (
         {"type": "memory.forget", "kind": "fact", "id": fact}, {"type": "memory.edit", "id": fact, "text": "owned"},
-        {"type": "memory.pause", "paused": True}, {"type": "memory.undo"})]
+        {"type": "memory.pause", "paused": True}, {"type": "memory.undo"}, {"type": "memory.undo_edit", "id": fact})]
     events = [Transcript("assistant", text) for text in hostile] + [Transcript("user", hostile[0])]
     client, ws = session(ScriptedAdapter(events))
     with client, ws as websocket:
@@ -392,7 +474,7 @@ def test_nothing_but_the_receive_loop_can_reach_the_screen_handlers():
     # Model output arrives through adapter events and tool calls; none of those modules may import the screen.
     for name in ("local_adapter.py", "gemini_adapter.py", "tier1.py", "actions.py", "recap.py", "weather.py", "tools.py", "adapter.py"):
         source = (SRC / name).read_text()
-        for needle in ("memory_screen", "edit_fact", "forget_item", "set_paused", "memory.restore", "memory.view"):
+        for needle in ("memory_screen", "edit_fact", "forget_item", "set_paused", "memory.restore", "restore_edit", "memory.view"):
             assert needle not in source, (name, needle)
     app_source = (SRC / "app.py").read_text()
     assert app_source.count("memory_screen.handle") == 1

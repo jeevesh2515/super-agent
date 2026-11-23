@@ -189,6 +189,10 @@ export class VoiceSessionService {
     this.sendMemory({ type: 'memory.edit', id, text });
   }
 
+  undoEditMemory(id: number): void {
+    this.sendMemory({ type: 'memory.undo_edit', id });
+  }
+
   forgetMemory(kind: 'fact' | 'reminder', id: number): void {
     this.sendMemory({ type: 'memory.forget', kind, id });
   }

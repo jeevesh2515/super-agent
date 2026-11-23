@@ -183,6 +183,10 @@ export class AppComponent implements OnDestroy {
     if (item) window.setTimeout(() => this.memoryPanel?.nativeElement.querySelector<HTMLElement>(`[data-edit="${item.id}"]`)?.focus());
   }
 
+  undoEdit(item: MemoryItem): void {
+    this.session.undoEditMemory(item.id);
+  }
+
   forget(item: MemoryItem): void {
     this.session.forgetMemory(item.kind, item.id);
   }

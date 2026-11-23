@@ -10,6 +10,8 @@ export interface MemoryItem {
   text: string;
   createdAt: string;
   fromUser: boolean;
+  /** The latest edit of this fact can be undone. The earlier text is never sent to the page. */
+  editUndoable?: boolean;
   dueAt?: string;
   repeat?: string | null;
 }
@@ -34,7 +36,7 @@ export const MAX_QUERY_CHARS = 100;
 /** A search needs three characters, as the backend's recall does. */
 export const MIN_QUERY_CHARS = 3;
 
-const OPS = new Set(['list', 'edit', 'forget', 'undo', 'pause']);
+const OPS = new Set(['list', 'edit', 'undo_edit', 'forget', 'undo', 'pause']);
 const ERROR_TEXT: Record<string, string> = {
   'memory-off': 'Memory is off.',
   'bad-text': `A fact must be 1 to ${MAX_ITEM_CHARS} characters.`,
@@ -61,6 +63,10 @@ function parseItem(raw: unknown): MemoryItem | null {
     kind: item['kind'], id: item['id'], text: item['text'],
     createdAt: item['createdAt'].slice(0, 40), fromUser: item['fromUser'],
   };
+  if (item['editUndoable'] !== undefined) {
+    if (item['kind'] !== 'fact' || item['editUndoable'] !== true) return null;
+    parsed.editUndoable = true;
+  }
   if (item['kind'] === 'reminder') {
     if (typeof item['dueAt'] !== 'string') return null;
     parsed.dueAt = item['dueAt'].slice(0, 40);

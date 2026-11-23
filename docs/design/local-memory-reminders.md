@@ -77,6 +77,17 @@ forgotten fact is never in it. Ranking is BM25, ties newest first.
   NEAR never reach the FTS5 query syntax. At most 20 words are used.
 - At startup `memory.FTS5` records whether this SQLite has FTS5. If not,
   recall falls back to the earlier word-overlap match.
+- A run of CJK text with no spaces is one token for the `unicode61` tokenizer
+  (and one word in the fallback), so a search matches only the whole run: a
+  shorter piece of it finds nothing. Query words under 3 characters are
+  dropped, so a one or two character CJK word cannot be searched at all.
+  Segmenting CJK would need a different tokenizer or a dependency, so this is a
+  known limit, not a plan.
+- The fallback used when FTS5 is unavailable ranks differently from the FTS5
+  search. It has no stemming for the screen and `list_memory` ("sisters" does
+  not find "sister"), orders by how many distinct query words a note contains
+  rather than BM25, and keeps newest first on ties. Turn notes use a prefix
+  match instead, so results can differ between the two builds.
 - Stored text is only ever matched against, never run: a fact that looks like
   SQL, an FTS query or an instruction stays a line of data.
 - Still a proposal, not built: a small local embedding model for paraphrases
@@ -109,12 +120,15 @@ the panel says memory is off.
 | --- | --- | --- |
 | `memory.list` | `query`: string, up to 100 characters ("" for everything; the page sends one only with 3 or more) | `memory.items` |
 | `memory.edit` | `id`: integer 1 to 2^31, `text`: string, 1 to 1000 characters | `memory.result` |
+| `memory.undo_edit` | `id`: as above | `memory.result` |
 | `memory.forget` | `kind`: `fact` or `reminder`, `id`: as above | `memory.result` |
 | `memory.undo` | none | `memory.result` |
 | `memory.pause` | `paused`: boolean | `memory.result` |
 
 `memory.items` is `{ enabled, paused, undoable, items }`. Each item has `kind`,
-`id`, `text`, `createdAt`, `fromUser`, and for a reminder `dueAt` and `repeat`.
+`id`, `text`, `createdAt`, `fromUser`, for a reminder `dueAt` and `repeat`, and for
+a fact whose latest edit can still be undone `editUndoable: true`. The earlier
+text is never sent in a list.
 `undoable` counts the items the latest forget would restore (inside the 24 hour
 window). `memory.result` is `{ op, ok }` plus `error` when refused. The error is
 one of `memory-off`, `bad-text`, `secret`, `duplicate`, `not-found`,
@@ -138,6 +152,15 @@ Rules in code (`memory_screen.py`, `memory.py`):
    "not found".
 4. **Forget and undo reuse the soft delete.** Forget stamps one item and undo
    restores the latest batch inside 24 hours, exactly as the voice tools do.
+   An edit keeps the fact's previous text in the same row (`prev_text`,
+   `prev_at`) so `memory.undo_edit` can put it back inside the same 24 hours.
+   Only the latest edit is kept; an edit to the same text keeps the older undo.
+   Opening the store clears the previous text once the window has passed, in
+   the same step that purges forgotten rows (as for those rows, SQLite may leave
+   the old bytes in free pages until they are reused). Recall, search, `list_memory` and
+   the turn notes read only `text`, so the previous text is never returned to
+   the model. Undo is refused as `duplicate` if another fact now holds that
+   text, and as `nothing-to-restore` if there is no edit to undo.
 5. **Pause.** While paused, the model's memory writes (`remember_fact`,
    `add_reminder`, `complete_reminder`, `forget`, `undo_forget`) return a fixed
    refusal. Reads and the owner's own screen edits still work, so the owner can

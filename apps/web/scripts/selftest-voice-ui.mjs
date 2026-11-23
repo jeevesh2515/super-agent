@@ -92,6 +92,8 @@ equal(mem.parseMemoryItems(listMsg({ enabled: false, items: [] })).enabled, fals
 const reminder = item({ kind: 'reminder', id: 4, text: 'call home', dueAt: '2026-11-15T10:00:00+00:00', repeat: 'daily' });
 equal(mem.parseMemoryItems(listMsg({ items: [reminder] })).items[0].repeat, 'daily');
 equal(mem.parseMemoryItems(listMsg({ items: [{ ...reminder, repeat: null }] })).items[0].repeat, null);
+equal(mem.parseMemoryItems(listMsg({ items: [item({ editUndoable: true })] })).items[0].editUndoable, true);
+equal(mem.parseMemoryItems(listMsg()).items[0].editUndoable, undefined);
 // Anything the backend would never send is refused whole, not partly shown.
 for (const bad of [
   listMsg({ enabled: 'yes' }), listMsg({ paused: 1 }), listMsg({ undoable: -1 }), listMsg({ undoable: 1.5 }),
@@ -101,6 +103,8 @@ for (const bad of [
   listMsg({ items: [item({ text: 'x'.repeat(241) })] }), listMsg({ items: [item({ text: 5 })] }),
   listMsg({ items: [item({ fromUser: 'true' })] }), listMsg({ items: [item({ createdAt: 5 })] }),
   listMsg({ items: [item({ kind: 'reminder' })] }),
+  listMsg({ items: [item({ editUndoable: false })] }), listMsg({ items: [item({ editUndoable: 'yes' })] }),
+  listMsg({ items: [{ ...reminder, editUndoable: true }] }),
   listMsg({ items: Array.from({ length: 351 }, (_, i) => item({ id: i + 1 })) }),
   {}, { enabled: true },
 ]) equal(mem.parseMemoryItems(bad), null);
@@ -112,6 +116,7 @@ equal(JSON.stringify(mem.parseMemoryResult({ op: 'edit', ok: true })), '{"op":"e
 equal(mem.parseMemoryResult({ op: 'edit', ok: false, error: 'secret' }).error, 'secret');
 equal(mem.parseMemoryResult({ op: 'edit', ok: false, error: 'something <b>new</b>' }).error, 'failed');
 equal(mem.parseMemoryResult({ op: 'edit', ok: false }).error, 'failed');
+equal(mem.parseMemoryResult({ op: 'undo_edit', ok: false, error: 'nothing-to-restore' }).error, 'nothing-to-restore');
 equal(mem.parseMemoryResult({ op: 'delete', ok: true }), null);
 equal(mem.parseMemoryResult({ op: 'edit', ok: 'yes' }), null);
 equal(mem.parseMemoryResult({ ok: true }), null);

@@ -70,7 +70,7 @@ _SECRET = re.compile("|".join((
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS facts(
   id INTEGER PRIMARY KEY, text TEXT NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT,
-  from_user INTEGER NOT NULL DEFAULT 0);
+  from_user INTEGER NOT NULL DEFAULT 0, prev_text TEXT, prev_at TEXT);
 CREATE TABLE IF NOT EXISTS reminders(
   id INTEGER PRIMARY KEY, text TEXT NOT NULL, due_at TEXT NOT NULL, repeat TEXT,
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'done')),
@@ -82,7 +82,7 @@ _lock = threading.Lock()  # the voice backend calls from worker threads
 # "Pause memory" in the console: model writes refuse until the owner resumes or the session ends.
 # shortcut: one flag for the whole process, because the backend allows one voice session at a time.
 _paused = threading.Event()
-_SCREEN_OPS = frozenset({"screen_list", "screen_edit", "screen_forget", "screen_undo", "screen_pause"})
+_SCREEN_OPS = frozenset({"screen_list", "screen_edit", "screen_undo_edit", "screen_forget", "screen_undo", "screen_pause"})
 
 
 class _Refuse(Exception):
@@ -115,12 +115,16 @@ def _db() -> Iterator[sqlite3.Connection]:
         con = sqlite3.connect(DB_PATH)
         try:
             con.executescript(_SCHEMA)
-            for table in ("facts", "reminders"):  # stores made before the screen lack the column
-                if "from_user" not in {row[1] for row in con.execute(f"PRAGMA table_info({table})")}:
-                    con.execute(f"ALTER TABLE {table} ADD COLUMN from_user INTEGER NOT NULL DEFAULT 0")
+            for table, column, ddl in (("facts", "from_user", "INTEGER NOT NULL DEFAULT 0"),
+                                       ("reminders", "from_user", "INTEGER NOT NULL DEFAULT 0"),
+                                       ("facts", "prev_text", "TEXT"), ("facts", "prev_at", "TEXT")):
+                if column not in {row[1] for row in con.execute(f"PRAGMA table_info({table})")}:  # older stores
+                    con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
             cutoff = _stamp(-timedelta(hours=_UNDO_HOURS))
             con.execute("DELETE FROM facts WHERE deleted_at < ?", (cutoff,))
             con.execute("DELETE FROM reminders WHERE deleted_at < ?", (cutoff,))
+            # The text before an edit lives as long as a forgotten item does, then it is erased.
+            con.execute("UPDATE facts SET prev_text = NULL, prev_at = NULL WHERE prev_at < ?", (cutoff,))
             yield con
             con.commit()
         except BaseException:
@@ -593,7 +597,7 @@ def view(query: str = "") -> dict:
     if not DB_PATH.exists():  # looking must not create the store for someone who never used it
         return {"items": [], "undoable": 0}
     with _db() as db:
-        facts = db.execute("SELECT id, text, created_at, from_user FROM facts "
+        facts = db.execute("SELECT id, text, created_at, from_user, prev_text IS NOT NULL FROM facts "
                            "WHERE deleted_at IS NULL ORDER BY id DESC").fetchall()
         reminders = db.execute("SELECT id, text, created_at, from_user, due_at, repeat FROM reminders "
                                "WHERE status = 'open' AND deleted_at IS NULL ORDER BY due_at").fetchall()
@@ -608,10 +612,12 @@ def view(query: str = "") -> dict:
         by_id = {row[0]: row for row in rows}
         order = [id_ for id_, _ in _recall([(row[0], row[1]) for row in rows], query)] if searching else list(by_id)
         for id_ in order:
-            _, text, created, from_user, *reminder = by_id[id_]
+            _, text, created, from_user, *rest = by_id[id_]
             item = {"kind": kind, "id": id_, "text": text, "createdAt": created, "fromUser": bool(from_user)}
-            if reminder:
-                item |= {"dueAt": reminder[0], "repeat": reminder[1]}
+            if kind == "reminder":
+                item |= {"dueAt": rest[0], "repeat": rest[1]}
+            elif rest[0]:  # whether an edit can be undone; the earlier text itself is never sent
+                item["editUndoable"] = True
             items.append(item)
     return {"items": items, "undoable": undoable}
 
@@ -620,11 +626,26 @@ def view(query: str = "") -> dict:
 def edit_fact(id_: int, text: str) -> None:
     text = _text(text)
     with _db() as db:
-        if db.execute("SELECT 1 FROM facts WHERE id = ? AND deleted_at IS NULL", (id_,)).fetchone() is None:
+        row = db.execute("SELECT text FROM facts WHERE id = ? AND deleted_at IS NULL", (id_,)).fetchone()
+        if row is None:
             raise _Refuse(NOT_FOUND)
         if any(other != id_ and known.casefold() == text.casefold() for other, known in _facts(db)):
             raise _Refuse(DUPLICATE)
-        db.execute("UPDATE facts SET text = ? WHERE id = ?", (text, id_))
+        if row[0] != text:  # only the latest edit is kept, so an edit to the same text keeps the older undo
+            db.execute("UPDATE facts SET text = ?, prev_text = ?, prev_at = ? WHERE id = ?", (text, row[0], _stamp(), id_))
+
+
+@_owner("screen_undo_edit")
+def restore_edit(id_: int) -> None:
+    """Puts back the text before the latest edit of a fact, inside the same 24 hours a forget can be undone."""
+    with _db() as db:  # opening the store has already erased any earlier text past the window
+        row = db.execute("SELECT prev_text FROM facts WHERE id = ? AND deleted_at IS NULL "
+                         "AND prev_text IS NOT NULL", (id_,)).fetchone()
+        if row is None:
+            raise _Refuse(NOTHING)
+        if any(other != id_ and known.casefold() == row[0].casefold() for other, known in _facts(db)):
+            raise _Refuse(DUPLICATE)
+        db.execute("UPDATE facts SET text = ?, prev_text = NULL, prev_at = NULL WHERE id = ?", (row[0], id_))
 
 
 @_owner("screen_forget")

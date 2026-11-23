@@ -20,6 +20,7 @@ _SHAPES = {
     "memory.list": {"query": lambda v: isinstance(v, str) and len(v) <= MAX_QUERY},
     "memory.edit": {"id": lambda v: type(v) is int and 0 < v < _MAX_ID,
                     "text": lambda v: isinstance(v, str) and 0 < len(v) <= MAX_EDIT_TEXT},
+    "memory.undo_edit": {"id": lambda v: type(v) is int and 0 < v < _MAX_ID},
     "memory.forget": {"kind": lambda v: v in ("fact", "reminder"),
                       "id": lambda v: type(v) is int and 0 < v < _MAX_ID},
     "memory.undo": {},
@@ -58,6 +59,8 @@ def _apply(op: str, control: dict) -> dict:
         error = ""
     elif op == "edit":
         error = memory.edit_fact(control["id"], control["text"])
+    elif op == "undo_edit":
+        error = memory.restore_edit(control["id"])
     elif op == "forget":
         error = memory.forget_item(control["kind"], control["id"])
     else:

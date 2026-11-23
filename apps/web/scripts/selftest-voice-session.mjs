@@ -1700,6 +1700,8 @@ await (async function memoryMessages() {
   assert.equal(socket.lastText().query.length, 100);
   service.editMemory(3, 'my sister is Asha K');
   assert.deepEqual(socket.lastText(), { type: 'memory.edit', id: 3, text: 'my sister is Asha K' });
+  service.undoEditMemory(3);
+  assert.deepEqual(socket.lastText(), { type: 'memory.undo_edit', id: 3 });
   service.forgetMemory('reminder', 4);
   assert.deepEqual(socket.lastText(), { type: 'memory.forget', kind: 'reminder', id: 4 });
   service.undoMemory();
@@ -1728,6 +1730,14 @@ await (async function memoryReplies() {
   socket.fireMessage({ type: 'memory.result', op: 'forget', ok: true });
   await flushed();
   assert.equal(lists(), before + 1, 'an applied change asks for the list again');
+  socket.fireMessage({ type: 'memory.result', op: 'undo_edit', ok: true });
+  await flushed();
+  assert.equal(lists(), before + 2, 'an undone edit asks for the list again');
+  assert.equal(service.memoryError(), '');
+  socket.fireMessage({ type: 'memory.result', op: 'undo_edit', ok: false, error: 'duplicate' });
+  await flushed();
+  assert.equal(service.memoryError(), 'That fact is already remembered.');
+  assert.equal(service.editsApplied(), 0, 'only an edit closes the editor, not its undo');
   assert.deepEqual(socket.lastText(), { type: 'memory.list', query: 'sister' }, 'with the same search');
   assert.equal(service.memoryError(), '');
   socket.fireMessage({ type: 'memory.result', op: 'edit', ok: false, error: 'secret' });

@@ -258,6 +258,10 @@
                         <button class="secondary-button" type="button" [attr.data-edit]="item.id"
                           [attr.aria-label]="'Edit fact: ' + item.text" (click)="startEdit(item)">Edit</button>
                       }
+                      @if (item.editUndoable) {
+                        <button class="secondary-button" type="button"
+                          [attr.aria-label]="'Undo the last edit of: ' + item.text" (click)="undoEdit(item)">Undo edit</button>
+                      }
                       <button class="secondary-button danger" type="button"
                         [attr.aria-label]="'Forget ' + item.kind + ': ' + item.text" (click)="forget(item)">Forget</button>
                     </div>

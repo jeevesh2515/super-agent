@@ -241,7 +241,7 @@ Client events:
 | `capture.unmute` | `{ "type": "capture.unmute" }` | Starts a new provider audio stream. |
 | `playback.interrupt` | `{ "type": "playback.interrupt" }` | Local barge-in. Stops playback and bumps the epoch. |
 | `session.stop` | `{ "type": "session.stop" }` | Ends the session and closes the provider. |
-| `memory.list`, `memory.edit`, `memory.forget`, `memory.undo`, `memory.pause` | See [the memory screen](local-memory-reminders.md#the-memory-screen) | The owner's memory controls. Browser only, exact fields, malformed means `invalid-control`. |
+| `memory.list`, `memory.edit`, `memory.undo_edit`, `memory.forget`, `memory.undo`, `memory.pause` | See [the memory screen](local-memory-reminders.md#the-memory-screen) | The owner's memory controls. Browser only, exact fields, malformed means `invalid-control`. |
 
 Server events:
 
