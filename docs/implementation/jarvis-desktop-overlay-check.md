@@ -63,3 +63,49 @@ for `graceful-fs`. None is non-commercial or custom.
 
 Not run. Steps for the operator are in the
 [HQ README](../../apps/hq/README.md#desktop-overlay).
+
+## macOS test-readiness follow-up, 2026-11-21
+
+A fresh HQ workspace on loopback used a synthetic owner, generated speech,
+and one live OpenAI Realtime call. Hermes was disabled. Chrome supplied the
+generated speech as its microphone input. A real Electron overlay ran on the
+built-in display. The test read the overlay's rendered state and energy.
+
+| Check | Result |
+| --- | --- |
+| Start the overlay after selecting Carbon in HQ | The first connected state showed Carbon without another skin change |
+| Hide and disconnected styling | The renderer's computed opacity was zero when the two attributes were applied in either order |
+| Live OpenAI Realtime response | The overlay went from idle to thinking and speaking, with nonzero speaking energy |
+| Relay regression | The automated test covered late subscription, resubscription, and isolation between signed-in users |
+
+Local repository checks, HQ typecheck and build passed. HQ tests had 54
+passes, zero failures and 16 skips. Desktop motion tests passed 5 of 5.
+The voice test used generated speech. It did not measure audible speaker
+playback or exercise the tray or native input.
+
+## Physical acceptance checklist
+
+Use a synthetic test workspace on the Mac and another on the Windows host
+with HQ in WSL2. Record the commit, OS, display count and scale, and the
+outcome of each check. Keep credentials, recordings and transcripts local.
+
+1. Start HQ, choose a skin, then start the overlay. The chosen skin should
+   appear without a second change. Hover over a different skin and move away.
+   The overlay should preview it and return to the saved skin.
+2. Park the overlay in a corner. Position a disposable text field and button
+   underneath it. Click, type, then click the button. Verify that the
+   underlying app remains focused and receives all input.
+3. Attach a second display in extended mode. Move across both screens,
+   including displays with different scale or alignment when available.
+   Check that the overlay stays in the active display's work area.
+4. Hide the overlay, stop HQ, and restart HQ. Check that the overlay stays
+   hidden. Unhide it and verify that it reconnects and shows the current skin.
+5. Start a Realtime call in the test workspace and ask a synthetic question.
+   Check that the overlay reflects the call, animates with the spoken
+   response, and returns to idle when the call ends. Confirm audible playback
+   separately from animation.
+
+The physical Windows run, multi-display behavior, and click-through and
+focus checks are pending. On macOS, ScreenCaptureKit apps can capture the
+window even with Electron content protection enabled. The earlier
+`screencapture` observation covers that command only.

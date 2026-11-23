@@ -40,7 +40,11 @@ export function startCompanionMirror(): () => void {
   };
   refresh = push;
   const timer = setInterval(() => { if (status() === 'speaking' || status() === 'listening') push(); }, 100);
-  const unsubs = [useVoice.subscribe(push), useConfigUI.subscribe(push), useStore.subscribe((s, p) => { if (s.live !== p.live) push(); })];
+  const unsubs = [useVoice.subscribe(push), useConfigUI.subscribe(push), useStore.subscribe((s, p) => {
+    const reconnected = s.sseConnected && !p.sseConnected;
+    if (reconnected) sent = '';
+    if (s.live !== p.live || reconnected) push();
+  })];
   push();
   return () => { clearInterval(timer); unsubs.forEach((u) => u()); refresh = () => {}; };
 }

@@ -17,7 +17,13 @@ window.overlay.on((channel, value) => {
   if (channel === 'cursor') cursor = value;
   else if (channel === 'area') { area = value; pos = null; }
   else if (channel === 'mode') { mode = value; buddy.hidden = mode === 'hidden'; }
-  else if (channel === 'connection') buddy.dataset.connection = value;
+  else if (channel === 'connection') {
+    buddy.dataset.connection = value;
+    if (value === 'offline') {
+      buddy.dataset.status = 'idle';
+      sample = 0;
+    }
+  }
   else if (channel === 'companion') {
     buddy.dataset.status = value.status;
     art.dataset.look = value.skin;

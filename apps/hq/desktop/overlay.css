@@ -4,8 +4,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: transparent;
   will-change: transform; pointer-events: none;
   transition: opacity 240ms ease;
 }
-.buddy[hidden] { display: block; opacity: 0; }
 .buddy[data-connection='offline'] { opacity: 0.45; filter: saturate(0.3); }
+.buddy[hidden] { display: block; opacity: 0; }
 .buddy .companion__art { width: 100%; height: 100%; }
 .buddy .companion__orbit { width: 100%; }
 .buddy .companion__head { width: 62%; transition: none; }

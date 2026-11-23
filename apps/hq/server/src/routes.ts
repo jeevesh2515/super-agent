@@ -137,6 +137,8 @@ api.use('/*', async (c, next) => {
 
 // ---------- events (SSE) ----------
 
+const latestCompanion = new Map<string, CompanionState>();
+
 api.get('/events', (c) => {
   const user = c.get('user');
   return streamSSE(c, async (stream) => {
@@ -144,6 +146,8 @@ api.get('/events', (c) => {
     let wake: (() => void) | null = null;
     const unsub = hub.subscribe(user.id, (ev) => { queue.push(JSON.stringify(ev)); wake?.(); });
     stream.onAbort(() => { unsub(); wake?.(); });
+    const state = latestCompanion.get(user.id);
+    if (state) queue.push(JSON.stringify({ type: 'companion', state }));
     await stream.writeSSE({ data: JSON.stringify({ type: 'hello', serverTime: now() }) });
     while (!stream.aborted) {
       if (!queue.length) {
@@ -173,7 +177,9 @@ export function companionState(body: any): CompanionState | null {
 api.post('/companion', async (c) => {
   const state = companionState(await c.req.json().catch(() => null));
   if (!state) return c.json({ error: 'invalid companion state' }, 400);
-  hub.emit(c.get('user').id, { type: 'companion', state });
+  const userId = c.get('user').id;
+  latestCompanion.set(userId, state);
+  hub.emit(userId, { type: 'companion', state });
   return c.body(null, 204);
 });
 
