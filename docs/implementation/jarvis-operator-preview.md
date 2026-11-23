@@ -62,9 +62,15 @@ latency during operator speech. Logs contain timings and states only.
   still require separate mitigations.
 - The workspace integration tests cover replay, overlapping jobs, confirmation
   of cancellation and reconnect. A browser smoke check exercised the production
-  Angular build, the local proof, theme selection, request and receipt using a
-  scripted worker. The voice session stayed disconnected.
-- The five workers still need separately contained runtimes and desktop view and
-  takeover. The release also requires persistent job recovery and memory in the
+  Angular build, the local proof, theme selection, request and receipt. A
+  follow-up run used an installed Hermes gateway and local fixture model. The
+  voice session stayed disconnected during the browser workspace checks.
+- The [voice handoff fixture](../../spikes/a7-hermes-runs/README.md) verifies
+  a fixed spoken request dispatch, its Hermes receipt and a separate,
+  correlated announcement. The paid OpenAI end-to-end run remains pending.
+- [Five Linux desktop containers](../../spikes/a8-hermes-desktops/README.md)
+  started with separate files and displays. Connect each worker to its own
+  runtime and add authenticated viewer and takeover controls. The release
+  also requires persistent job recovery and memory in the
   workspace, scoped peer handoff, supported account configuration, a live voice
   job and playback run, capability verification and the 95/100 product score.

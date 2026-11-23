@@ -7,20 +7,28 @@ import asyncio
 import json
 import os
 import secrets
+import signal
 import socket
 import subprocess
 import tempfile
 import threading
 import time
-from contextlib import ExitStack
+from contextlib import ExitStack, suppress
+from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from uuid import uuid4
 
 import httpx
+import uvicorn
 
+from super_agent_voice.adapter import AdapterError, FakeVoiceAdapter
+from super_agent_voice.app import create_app
+from super_agent_voice.config import VoiceConfig
 from super_agent_voice.hermes_runs import HermesRunsClient
 from super_agent_voice.jarvis_runtime import JarvisRuntime
+from super_agent_voice.jarvis_voice_handoff import exercise_handoff
+from super_agent_voice.openai_realtime import open_openai_transport
 
 WORKERS = ("research", "developer", "writer", "operator", "reviewer")
 ANSWER = "Omar owns the mute check."
@@ -72,12 +80,21 @@ def unused_port() -> int:
 
 
 def terminate(process: subprocess.Popen) -> None:
+    if os.name == "posix":
+        # A failed Hermes bootstrap can leave its installer child alive.
+        with suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
     if process.poll() is None:
-        process.terminate()
+        if os.name != "posix":
+            process.terminate()
         try:
             process.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            process.kill()
+            if os.name == "posix":
+                with suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
             process.wait(timeout=5)
 
 
@@ -107,7 +124,10 @@ gateway:
     env = {key: os.environ[key] for key in ("PATH", "HOME", "LANG", "TMPDIR", "SYSTEMROOT") if key in os.environ}
     env.update(HERMES_HOME=str(profile), DO_NOT_TRACK="1")
     with (profile / "gateway.log").open("w") as log:
-        process = subprocess.Popen([str(executable), "gateway", "run"], cwd=profile, env=env, stdout=log, stderr=log)
+        process = subprocess.Popen(
+            [str(executable), "gateway", "run"], cwd=profile, env=env, stdout=log, stderr=log,
+            start_new_session=os.name == "posix",
+        )
     stack.callback(terminate, process)
     return port, HermesRunsClient(port, credential), process
 
@@ -125,10 +145,30 @@ async def wait_for_health(port: int, process: subprocess.Popen) -> None:
     raise RuntimeError("Hermes gateway exited before becoming ready")
 
 
-async def exercise(gateways: dict[str, tuple[int, HermesRunsClient, subprocess.Popen]]) -> None:
+async def exercise(
+    gateways: dict[str, tuple[int, HermesRunsClient, subprocess.Popen]], *, serve_workspace: bool, openai_key: str | None,
+) -> None:
     await asyncio.gather(*(wait_for_health(port, process) for port, _, process in gateways.values()))
     runtime = JarvisRuntime({name: client for name, (_, client, _) in gateways.items()})
+    if serve_workspace:
+        # Keep the preview independent of any cloud voice mode set in the shell.
+        app = create_app(VoiceConfig.from_environment(), FakeVoiceAdapter, workspace=runtime)
+        await uvicorn.Server(uvicorn.Config(
+            app, host="127.0.0.1", port=8000, ws_max_size=65600, ws_max_queue=4,
+        )).serve()
+        return
     try:
+        if openai_key is not None:
+            try:
+                transport = await open_openai_transport(openai_key)
+                actual = await exercise_handoff(transport, runtime)
+            except AdapterError as error:
+                print(json.dumps({"outcome": error.category}))
+                raise SystemExit(1) from None
+            print(json.dumps(asdict(actual)))
+            if actual.outcome != "verified" or not actual.transport_closed:
+                raise SystemExit(1)
+            return
         for name in gateways:
             request = uuid4()
             prompt = f"Jarvis synthetic fixture for {name}. Say who owns the mute check."
@@ -154,7 +194,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hermes-executable", type=Path, required=True)
     parser.add_argument("--workers", type=int, choices=range(1, 6), default=1)
+    operation = parser.add_mutually_exclusive_group()
+    operation.add_argument("--serve-workspace", action="store_true", help="serve the Jarvis workspace using temporary gateways")
+    operation.add_argument("--live-voice-handoff", action="store_true", help="send one generated utterance to the paid OpenAI endpoint")
     args = parser.parse_args()
+    openai_key = os.environ.get("OPENAI_API_KEY") if args.live_voice_handoff else None
+    if args.live_voice_handoff and not openai_key:
+        parser.error("the live voice handoff needs OPENAI_API_KEY in the process environment")
     executable = args.hermes_executable.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="jarvis-hermes-fixture-") as directory, ExitStack() as stack:
         model = stack.enter_context(ThreadingHTTPServer(("127.0.0.1", 0), FixtureModel))
@@ -165,7 +211,7 @@ def main() -> None:
             name: start_gateway(executable, root / name, model.server_port, stack)
             for name in WORKERS[: args.workers]
         }
-        asyncio.run(exercise(gateways))
+        asyncio.run(exercise(gateways, serve_workspace=args.serve_workspace, openai_key=openai_key))
 
 
 if __name__ == "__main__":

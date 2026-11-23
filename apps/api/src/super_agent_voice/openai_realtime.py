@@ -118,6 +118,7 @@ class OpenAIRealtimeAdapter:
         self.tool = tool
         self.tool_calls: set[str] = set()
         self.waiting_for_tool_reply = False
+        self.announcement_id: str | None = None
         self.input_resampler = Pcm16kTo24k()
         self.caption_item_id: str | None = None
         self.response_id: str | None = None
@@ -229,14 +230,29 @@ class OpenAIRealtimeAdapter:
     async def close(self) -> None:
         await self.transport.close()
 
-    async def _continue_tool_turn(self, response: dict[str, Any]) -> bool:
+    async def request_announcement(self, phrase: str) -> None:
+        """Ask for one isolated, tool-free rendering of application-owned text."""
+        if (
+            self.response_id is not None or self.awaiting_response or self.announcement_id is not None
+            or not isinstance(phrase, str) or not 0 < len(phrase) <= 256 or not phrase.strip()
+        ):
+            raise AdapterError("session-failed")
+        self.announcement_id = uuid4().hex
+        self.awaiting_response = True
+        await self._send("response.create", response={
+            "conversation": "none", "input": [], "output_modalities": ["audio"], "tool_choice": "none",
+            "instructions": f"Say exactly this sentence and stop: {phrase}",
+            "metadata": {"jarvis_announcement": self.announcement_id},
+        })
+
+    async def _continue_tool_turn(self, response: dict[str, Any], *, allow_tool: bool) -> bool:
         output = response.get("output", [])
         if not isinstance(output, list):
             raise AdapterError("session-failed")
         calls = [item for item in output if isinstance(item, dict) and item.get("type") == "function_call"]
         if not calls:
             return False
-        if self.tool is None or len(calls) != 1 or len(self.tool_calls) >= 4:
+        if not allow_tool or self.tool is None or len(calls) != 1 or len(self.tool_calls) >= 4:
             raise AdapterError("session-failed")
         item, = calls
         call_id, raw = item.get("call_id"), item.get("arguments")
@@ -288,6 +304,10 @@ class OpenAIRealtimeAdapter:
                 if kind == "response.created":
                     if self.response_id is not None:
                         raise AdapterError("session-failed")
+                    if self.announcement_id is not None:
+                        metadata = response.get("metadata")
+                        if not isinstance(metadata, dict) or metadata.get("jarvis_announcement") != self.announcement_id:
+                            raise AdapterError("session-failed")
                     self.response_id, self.interrupted = identifier, self.cancel_on_start
                     self.awaiting_response = False
                     self.cancel_on_start = False
@@ -296,9 +316,11 @@ class OpenAIRealtimeAdapter:
                 elif identifier == self.response_id:
                     status = response.get("status")
                     was_interrupted = self.interrupted
+                    was_announcement = self.announcement_id is not None
+                    self.announcement_id = None
                     self.response_id, self.interrupted = None, False
                     if status == "completed" and not was_interrupted:
-                        if not await self._continue_tool_turn(response):
+                        if not await self._continue_tool_turn(response, allow_tool=not was_announcement):
                             tools_run = (self.tool.name,) if self.waiting_for_tool_reply and self.tool else ()
                             self.waiting_for_tool_reply = False
                             yield TurnComplete(tools_run)
