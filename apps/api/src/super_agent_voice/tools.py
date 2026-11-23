@@ -8,8 +8,13 @@ import ast
 import datetime
 import math
 import operator
+from typing import Any, Callable, TypedDict, Union
 
-TOOLS = [
+class ToolDefinition(TypedDict):
+    type: str
+    function: dict[str, Any]
+
+TOOLS: list[ToolDefinition] = [
     {"type": "function", "function": {
         "name": "calculate",
         "description": "Evaluate arithmetic with numbers and + - * / // % ** and parentheses.",
@@ -22,7 +27,10 @@ GEMINI_FUNCTIONS = [
      "parameters_json_schema": TOOLS[0]["function"]["parameters"]},
     {"name": "current_time", "description": "Get the current local date and time."},
 ]
-_OPERATORS = {
+_UnaryOpFn = Callable[[int | float], int | float]
+_BinaryOpFn = Callable[[int | float, int | float], int | float]
+_OperatorFn = Union[_UnaryOpFn, _BinaryOpFn]
+_OPERATORS: dict[type[ast.AST], _OperatorFn] = {
     ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv,
     ast.FloorDiv: operator.floordiv, ast.Mod: operator.mod, ast.Pow: operator.pow,
     ast.USub: operator.neg, ast.UAdd: operator.pos,
@@ -33,15 +41,17 @@ def calculate(expression: str) -> str:
     """Arithmetic only. The expression comes from the model, so it is parsed, never evaluated as code."""
     def value(node: ast.AST) -> int | float:
         if isinstance(node, ast.Constant) and type(node.value) in (int, float):
-            return node.value
+            return node.value  # type: ignore[return-value]  # guarded by type check
         if isinstance(node, ast.UnaryOp) and type(node.op) in _OPERATORS:
-            return _OPERATORS[type(node.op)](value(node.operand))
+            op_fn = _OPERATORS[type(node.op)]
+            return op_fn(value(node.operand))  # type: ignore[call-arg]
         if isinstance(node, ast.BinOp) and type(node.op) in _OPERATORS:
             left, right = value(node.left), value(node.right)
             # Bounds keep a huge power from freezing the voice loop.
             if isinstance(node.op, ast.Pow) and (abs(right) > 100 or abs(left) > 1e6):
                 raise ValueError("power too large")
-            return _OPERATORS[type(node.op)](left, right)
+            op_fn = _OPERATORS[type(node.op)]
+            return op_fn(left, right)  # type: ignore[call-arg]
         raise ValueError("not arithmetic")
 
     try:
@@ -67,7 +77,9 @@ def current_time() -> str:
 def run_tool(name: object, arguments: object) -> str:
     """The only code a model call can reach. Unknown names and bad arguments do nothing."""
     if name == "calculate" and isinstance(arguments, dict):
-        return calculate(arguments.get("expression"))
+        expr = arguments.get("expression")
+        if isinstance(expr, str):
+            return calculate(expr)
     if name == "current_time":
         return current_time()
     return "error: no such tool."

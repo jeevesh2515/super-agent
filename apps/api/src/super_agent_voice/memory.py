@@ -23,6 +23,7 @@ from contextlib import contextmanager
 from datetime import UTC, date, datetime, time, timedelta, tzinfo
 from functools import wraps
 from pathlib import Path
+from typing import cast
 from zoneinfo import ZoneInfo
 
 DB_PATH = Path.home() / ".super-agent" / "memory.db"
@@ -205,8 +206,11 @@ def _at(day: date, clock: time, tz: tzinfo) -> datetime:
 
 def _next(now: datetime, clock: time, ok: Callable[[int], bool], skip_today: bool = False) -> datetime:
     """First moment after now at this wall-clock time on a day whose weekday passes ok."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=UTC)
+    tz = cast(tzinfo, now.tzinfo)  # now guaranteed non-None
     for offset in range(skip_today, 15):
-        due = _at(now.date() + timedelta(days=offset), clock, now.tzinfo)
+        due = _at(now.date() + timedelta(days=offset), clock, tz)
         if due > now and ok(due.weekday()):
             return due
     raise ValueError("no day")
