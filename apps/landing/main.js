@@ -1,6 +1,7 @@
-import "@fontsource-variable/space-grotesk/wght.css";
+import "@fontsource-variable/instrument-sans/wght.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import { gsap } from "gsap";
+import { backgroundMotion, interfaceSound } from "./effects.js";
 import { initialJob, advanceJob, stages } from "./job.js";
 
 const $ = (selector) => document.querySelector(selector);
@@ -11,7 +12,6 @@ let job = initialJob;
 
 function renderJob() {
   const stage = stages[job.stage];
-  $("#job-label").textContent = stage.label;
   $("#job-title").textContent = stage.title;
   $("#job-copy").textContent = stage.copy;
   primary.firstChild.nodeValue = stage.primary[1] + " ";
@@ -56,9 +56,15 @@ motion.add("(prefers-reduced-motion: no-preference)", (context) => {
     });
   }
   const onEnter = context.add(null, (target) => {
-    gsap.fromTo(target, { y: 22, opacity: .6 }, {
-      y: 0, opacity: 1, duration: .68, ease: "power3.out", clearProps: "opacity,transform",
-    });
+    if (target.matches("[data-scroll]")) {
+      gsap.fromTo(target, { clipPath: "inset(0 38% 0 0)" }, {
+        clipPath: "inset(0 0% 0 0)", duration: .86, ease: "power3.out", clearProps: "clipPath",
+      });
+    } else {
+      gsap.fromTo(target, { y: 19, opacity: .74 }, {
+        y: 0, opacity: 1, duration: .61, ease: "power3.out", clearProps: "opacity,transform",
+      });
+    }
   });
   const observer = new IntersectionObserver((entries) => {
     for (const { target, isIntersecting } of entries) {
@@ -67,30 +73,26 @@ motion.add("(prefers-reduced-motion: no-preference)", (context) => {
       onEnter(target);
     }
   }, { rootMargin: "0px 0px -35px", threshold: .02 });
-  document.querySelectorAll(".reveal").forEach((item) => observer.observe(item));
+  document.querySelectorAll(".reveal, [data-scroll]").forEach((item) => observer.observe(item));
   return () => observer.disconnect();
 });
 
-motion.add("(prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine)", () => {
-  const hero = $(".hero");
-  const moveX = gsap.quickTo(".hero-picture", "x", { duration: .8, ease: "power3.out" });
-  const moveY = gsap.quickTo(".hero-picture", "y", { duration: .8, ease: "power3.out" });
-  const steer = ({ clientX, clientY }) => {
-    const rect = hero.getBoundingClientRect();
-    moveX((clientX - rect.left - rect.width / 2) * .025);
-    moveY((clientY - rect.top - rect.height / 2) * .022);
-  };
-  const rest = () => { moveX(0); moveY(0); };
-  hero.addEventListener("pointermove", steer);
-  hero.addEventListener("pointerleave", rest);
-  return () => {
-    hero.removeEventListener("pointermove", steer);
-    hero.removeEventListener("pointerleave", rest);
-  };
-});
+const pointerMotion = matchMedia("(prefers-reduced-motion: no-preference) and (hover: hover) and (pointer: fine)");
+let armorRequest;
+function loadArmor() {
+  if (!pointerMotion.matches || armorRequest) return;
+  armorRequest = import("./armor.js")
+    .then(({ mountArmor }) => mountArmor($("#hero-art"), $("#armor-image"), $("#armor-canvas"), pointerMotion))
+    .catch(() => { /* The original image remains in place without WebGL. */ });
+}
+$("#hero-art").addEventListener("pointerenter", loadArmor);
+pointerMotion.addEventListener("change", loadArmor);
+if ("requestIdleCallback" in window) requestIdleCallback(loadArmor, { timeout: 1800 });
 
 const film = $("#concept-film");
 const voice = $("#voice-audio");
+backgroundMotion($("#motion-study"), $("#background-loop"), $("#motion-toggle"), reduced);
+interfaceSound($("#sound-toggle"), () => !film.paused || !voice.paused);
 let loadScope;
 let scopeFailed = false;
 

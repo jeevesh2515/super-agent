@@ -4,7 +4,7 @@
 a change to the implementation order. The job states demonstrate intended
 behavior with fictional data. No roadmap ticks changed.
 
-## Reference inventory
+## Reference inventory and first preview
 
 An independent agent inspected the live [Aller Studio home page](https://www.allerstudio.com/)
 in Chromium at 1440 × 900 and 390 × 844, and inspected the relevant production bundles.
@@ -23,7 +23,7 @@ The audit observed Next.js/React, Tailwind-style utility classes, Rajdhani and
 Inter, responsive images, and Web Audio interaction sounds. GSAP and Lenis were
 not identified in the inspected bundles; that is not proof of absence.
 
-## Independent UI judgement
+## Independent UI judgement of the first preview
 
 The reference auditor visited both pages and scored each for its own primary
 visitor task. The scores are qualitative, not user research or an accessibility
@@ -43,7 +43,7 @@ found that the primary CTA initially landed above the actual simulation control
 on desktop. It now links directly to the console. The site also links to the
 voice scaffold beside the simulation.
 
-## Verification
+## Verification of the first preview
 
 - Chromium, desktop and emulated mobile: checked widths from 320 to 1440 CSS px.
   Tested approve/complete, decline, stop, reset, focus recovery, and FAQ.
@@ -55,3 +55,16 @@ voice scaffold beside the simulation.
 - The repository guard, two simulation tests, production build, and npm audit
   passed. Physical-device Safari, longitudinal performance, and screen-reader
   user tests were not run.
+
+## Revised preview
+
+The maintainer asked for an original armor hero with pointer response, an
+understated palette, sound effects, and a background video below the hero.
+The revised page uses graphite, bone, and oxide, with Instrument Sans for
+display type and IBM Plex Mono for the job states and ledger. The warm
+palette extends to the concept film and audio visualization.
+
+The helmet is an original textured relief rendered with Three.js. Its pointer
+orbit is intentionally limited. The locally rendered six-second loop is silent
+and plays in the media section with a pause control. Website sound starts off.
+The simulation still uses fictional reports and runs in the browser.

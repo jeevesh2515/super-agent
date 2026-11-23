@@ -24,18 +24,24 @@ static host. It does not require credentials, an API, or a paid service.
 
 - Vite (MIT) bundles and fingerprints the static assets. The landing package is
   separate from the voice application.
-- [GSAP](https://gsap.com/standard-license/) supplies entry reveals and pointer
-  easing. It uses a custom, no-charge license. CSS supplies hover feedback and,
-  where supported, scroll-linked hero parallax.
-- [Three.js](https://github.com/mrdoob/three.js/blob/r180/LICENSE) (MIT) renders the
-  voice waveform. It loads only when audio plays with motion enabled. A static
-  SVG is visible if WebGL is unavailable. The visualizer pauses when playback,
-  page visibility, or motion preferences require it.
-- Space Grotesk and IBM Plex Mono (SIL OFL 1.1) are served locally.
+- [GSAP](https://gsap.com/standard-license/) handles the entrance and scroll
+  reveals. It uses a custom, no-charge license. CSS handles smaller hover effects.
+- [Three.js](https://github.com/mrdoob/three.js/blob/r180/LICENSE) (MIT) renders
+  the hero as a textured depth mesh with limited pointer tilt. The still stays
+  available on touch devices, with reduced motion, and without WebGL. The voice
+  waveform also uses Three.js while the synthesized clip plays.
+- The sound toggle enables short Web Audio tones for interface feedback. It
+  starts off and is independent of the voice sample.
+- The silent six-second background loop starts when its section is visible.
+  It pauses offscreen and has an explicit play/pause control. With reduced motion
+  it starts on the poster and loads the video only when requested.
+- Instrument Sans and IBM Plex Mono (SIL OFL 1.1) are served locally.
   [Third-party notices](public/notices.txt) ship with the build.
 
-The hero image is original generated concept art, exported as two WebP sizes.
-The original 18-second silent film was rendered with
+The original helmet was generated as concept photography. Its WebP is both the
+still fallback and the texture on the depth mesh. The background loop is a
+procedural metal study [rendered locally](tools/make-armor-loop.py) with NumPy,
+Pillow, and FFmpeg. The 18-second silent concept film was rendered with
 [Pillow and FFmpeg](tools/make-media.py); the render uses macOS system fonts.
 The 8.44-second voice clip was synthesized offline with the stock Ryan preset
 from [Qwen3-TTS](https://huggingface.co/Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice)

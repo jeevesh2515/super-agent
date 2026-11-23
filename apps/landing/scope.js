@@ -19,7 +19,7 @@ export function mountScope(canvas, frame, audio, reduced) {
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new BufferAttribute(new Float32Array(samples * 3), 3));
     const material = new LineBasicMaterial({
-      color: index === 8 ? 0xe7dcff : 0x9e91ff,
+      color: index === 8 ? 0xffede1 : 0xd69a77,
       opacity: index === 8 ? 1 : .36 - Math.abs(index - 8) * .025,
       transparent: true,
     });

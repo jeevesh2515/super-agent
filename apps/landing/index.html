@@ -3,66 +3,62 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#080d1a">
+  <meta name="theme-color" content="#191613">
   <meta name="description" content="Super Agent is an open-source experiment in voice-first delegation. Explore a simulated job, from the first words to the final receipt.">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
   <link rel="icon" href="./mark.svg" type="image/svg+xml">
   <link rel="stylesheet" href="./style.css">
-  <title>Super Agent — Say it. Stay in control.</title>
+  <title>Super Agent — Your voice. Your call.</title>
 </head>
 <body id="top">
   <a class="skip" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="wrap nav">
-      <a class="brand" href="#top"><img src="./mark.svg" width="28" height="28" alt=""> SUPER<span>AGENT</span></a>
+      <a class="brand" href="#top"><img src="./mark.svg" width="28" height="28" alt=""> Super Agent</a>
       <nav aria-label="Main navigation">
         <a href="#demo">The demo</a>
         <a href="#principles">The design</a>
         <a href="#faq">FAQ</a>
       </nav>
-      <a class="nav-source" href="https://github.com/abhishek3059/super-agent">GitHub <span aria-hidden="true">↗</span></a>
+      <div class="nav-actions">
+        <button class="sound-toggle" id="sound-toggle" type="button" aria-pressed="false" hidden>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3 9h4l5-4v14l-5-4H3z"/><path class="sound-off" d="m16 10 5 5m0-5-5 5"/><path class="sound-on" d="M16 9a4 4 0 0 1 0 6m3-8a7 7 0 0 1 0 10"/></svg>
+          <span>Sound</span>
+        </button>
+        <a class="nav-source" href="https://github.com/abhishek3059/super-agent">GitHub <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-up-right"/></svg></a>
+      </div>
     </div>
   </header>
 
   <main id="main">
     <section class="hero" aria-labelledby="hero-title">
-      <div class="hero-art" aria-hidden="true">
-        <picture class="hero-picture">
-          <source media="(max-width: 720px)" srcset="./media/signal-core-mobile.webp">
-          <img src="./media/signal-core.webp" width="1536" height="1024" alt="" fetchpriority="high">
-        </picture>
-      </div>
       <div class="wrap hero-inner">
         <div class="hero-copy">
-          <p class="eyebrow hero-kicker"><span class="beacon"></span> An open-source voice experiment</p>
-          <h1 id="hero-title">Say it.<br><em>Stay in control.</em></h1>
-          <p class="hero-description">A voice-first assistant designed around jobs you can see, steer, and stop.</p>
+          <h1 id="hero-title">Your voice.<br><em>Your call.</em></h1>
+          <p class="hero-description">An open-source voice assistant designed around jobs you can see, steer, and stop.</p>
           <div class="hero-actions">
-            <a class="pill primary" href="#sandbox">Try the simulation <span aria-hidden="true">↘</span></a>
-            <a class="text-action" href="#film"><span class="play-icon" aria-hidden="true">▶</span> Watch the film</a>
+            <a class="pill primary" href="#sandbox" data-sound>Try the simulation <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-down-right"/></svg></a>
+            <a class="text-action" href="#concept-film" data-sound><svg class="icon play-icon" aria-hidden="true" focusable="false"><use href="#play"/></svg> Watch the concept film</a>
           </div>
         </div>
-        <div class="hero-index" aria-hidden="true"><div class="crosshair">+</div><b>FIG. 01</b><span>THE SIGNAL CORE</span></div>
-        <div class="hero-foot micro"><span>01 <i></i> 04</span><a href="#demo">Scroll to explore <b aria-hidden="true">↓</b></a><span>FIELD NOTES / VOL. 01</span></div>
+        <figure class="hero-art" id="hero-art" aria-label="Illustration of an experimental graphite helmet">
+          <div class="armor-frame">
+            <img id="armor-image" src="./media/armor.webp" width="960" height="1280" alt="" fetchpriority="high">
+            <canvas id="armor-canvas" aria-hidden="true" hidden></canvas>
+          </div>
+          <figcaption class="armor-caption" hidden>Move your pointer to inspect</figcaption>
+        </figure>
       </div>
     </section>
-
-    <div class="signal-strip">
-      <div class="wrap strip-inner">
-        <div><span aria-hidden="true">01 /</span> Voice by default</div>
-        <div><span aria-hidden="true">02 /</span> Bounded jobs</div>
-        <div><span aria-hidden="true">03 /</span> Local-first design</div>
-      </div>
-    </div>
 
     <section id="demo" class="paper section">
       <div class="wrap">
         <div class="section-intro reveal">
-          <p class="section-tag"><span>01</span> / Interactive walkthrough</p>
-          <div><h2>Follow the job.<br>Keep the controls.</h2><p>Compare two example build reports and see how a request becomes a job with a defined scope and a receipt.</p></div>
+          <h2>Follow the job.<br>Keep the controls.</h2>
+          <p>Compare two example build reports and see how a request becomes a job with a defined scope and a receipt.</p>
         </div>
         <div id="sandbox" class="console reveal" tabindex="-1" role="region" aria-label="Sample job simulation">
-          <div class="console-bar micro"><span><i class="beacon"></i> Sandbox / Job 001</span><span>Simulation · Sample data</span></div>
+          <div class="console-bar micro"><span><i class="beacon"></i> Job 001</span><span>Simulation · Sample data</span></div>
           <div class="console-main">
             <div class="console-controls">
               <ol class="job-steps" aria-label="Job progress">
@@ -72,33 +68,38 @@
                 <li data-step="done"><span>04</span> Receipt</li>
               </ol>
               <div id="job-output" class="job-output" aria-live="polite" aria-atomic="true">
-                <p class="micro" id="job-label">01 / Request</p>
                 <h3 id="job-title">“Compare the two build reports.”</h3>
                 <p id="job-copy">Use the sample request to see what the assistant would need before it can act.</p>
               </div>
               <div class="job-actions" hidden>
-                <button class="pill ink" id="job-primary" type="button">Send sample request <span aria-hidden="true">→</span></button>
+                <button class="pill ink" id="job-primary" type="button">Send sample request <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-right"/></svg></button>
                 <button class="quiet-button" id="job-secondary" type="button" hidden>Reset simulation</button>
               </div>
               <noscript><p>Walkthrough: send the sample request, review read-only access to two example files, then approve or decline. Approve to see a result or stop early. The receipt records the outcome.</p></noscript>
             </div>
             <div class="job-log">
-              <p class="micro"><span aria-hidden="true">◉</span> Event ledger</p>
+              <p class="micro"><i class="beacon" aria-hidden="true"></i> Event ledger</p>
               <ol id="job-events" aria-label="Recorded events"><li><span>01</span> Sandbox ready</li></ol>
               <p class="job-note">This demo never opens your files or requests your microphone.</p>
             </div>
           </div>
         </div>
-        <p class="proof-link">Want to run the current local prototype? <a href="https://github.com/abhishek3059/super-agent/blob/develop/apps/voice-foundation.md">See the voice scaffold <span aria-hidden="true">↗</span></a></p>
+        <p class="proof-link">Want to run the current local prototype? <a href="https://github.com/abhishek3059/super-agent/blob/develop/apps/voice-foundation.md">See the voice scaffold <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-up-right"/></svg></a></p>
       </div>
     </section>
 
     <section id="film" class="section media-section">
-      <div class="wrap">
-        <div class="section-intro reveal">
-          <p class="section-tag"><span>02</span> / Signal studies</p>
-          <div><h2>See it. Hear it.</h2><p>A short concept film and a sample voice response. Both use the build report example.</p></div>
+      <div class="motion-study" id="motion-study">
+        <video id="background-loop" muted loop playsinline preload="none" aria-hidden="true"></video>
+        <div class="wrap motion-inner">
+          <div class="motion-copy" data-scroll>
+            <h2>See it.<br>Hear it.</h2>
+            <p>A short concept film and a synthesized reply, both from the sample job.</p>
+          </div>
+          <button class="motion-toggle" id="motion-toggle" type="button" hidden>Play background motion</button>
         </div>
+      </div>
+      <div class="wrap">
         <div class="media-grid reveal">
           <figure class="film">
             <div class="media-frame">
@@ -107,21 +108,20 @@
                 <a href="./media/film.mp4">Open the concept film</a>
               </video>
             </div>
-            <figcaption><span class="micro">FILM / 01</span><span>From request to receipt</span><details><summary>Film description</summary><p>A voice request becomes a visible job: “Compare the two build reports.” The job lists what it can open: two example files, read only. The second build failed a new check. The final screen reads “Stopped on request.” The timeline keeps the partial result.</p></details></figcaption>
+            <figcaption><span>From request to receipt</span><details><summary>Film description</summary><p>A voice request becomes a visible job: “Compare the two build reports.” The job lists what it can open: two example files, read only. The second build failed a new check. The final screen reads “Stopped on request.” The timeline keeps the partial result.</p></details></figcaption>
           </figure>
           <article class="voice-panel" aria-labelledby="voice-title">
-            <div class="voice-top micro"><span>AUDIO / 01</span><span>Sample voice</span></div>
             <div class="voice-visual" id="voice-visual" aria-hidden="true">
-              <div class="scope-grid"></div>
               <svg viewBox="0 0 280 100" fill="none" focusable="false">
-                <path d="M4 50h26l12-7 12 14 12-7h13l10-25 11 50 11-25h10l9-38 12 76 12-38h10l9-24 11 48 12-24h13l10-10 11 20 11-10h35" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                <path d="M4 50h272" stroke="#6f5849" stroke-width="1"/>
+                <path d="M9 43.9v12.2 M14 28.2v43.6 M19 21.5v57.0 M24 29.9v40.2 M29 30.7v38.6 M34 20.1v59.8 M39 28.8v42.5 M44 34.6v30.7 M49 25.1v49.8 M54 25.1v49.8 M59 26.0v48.1 M64 27.4v45.3 M69 42.5v15.0 M74 33.5v33.0 M79 29.9v40.2 M84 27.1v45.8 M89 28.5v43.0 M94 38.0v24.0 M99 42.5v15.0 M104 41.1v17.8 M109 27.9v44.2 M114 33.0v34.1 M119 36.3v27.4 M124 19.0v62.1 M129 22.6v54.8 M134 43.0v13.9 M139 45.0v10.0 M144 45.0v10.0 M149 32.1v35.8 M154 24.8v50.3 M159 34.1v31.8 M164 28.5v43.0 M169 25.4v49.2 M174 44.4v11.1 M179 27.9v44.2 M184 27.4v45.3 M189 41.4v17.3 M194 26.8v46.4 M199 30.4v39.1 M204 43.6v12.8 M209 45.0v10.0 M214 25.1v49.8 M219 25.7v48.6 M224 40.2v19.5 M229 29.6v40.8 M234 31.8v36.3 M239 17.8v64.3 M244 17.0v66.0 M249 23.4v53.1 M254 39.1v21.8 M259 45.0v10.0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
               </svg>
               <canvas id="voice-canvas" hidden></canvas>
             </div>
             <div class="voice-content">
-              <h3 id="voice-title">The voice channel</h3>
+              <div class="voice-heading"><h3 id="voice-title">A sample reply</h3><span class="micro">0:08</span></div>
               <p>Hear a synthesized reply to the sample job.</p>
-              <audio id="voice-audio" controls preload="none" src="./media/voice-preview.mp3" aria-label="Sample synthesized reply"><a href="./media/voice-preview.mp3">Open the voice sample</a></audio>
+              <audio id="voice-audio" controls preload="metadata" src="./media/voice-preview.mp3" aria-label="Sample synthesized reply"><a href="./media/voice-preview.mp3">Open the voice sample</a></audio>
               <details><summary>Audio transcript</summary><p>“I found one new failure in the second build. The report is ready. I’ve stopped the job.”</p></details>
             </div>
           </article>
@@ -132,18 +132,18 @@
     <section id="principles" class="section paper principles">
       <div class="wrap">
         <div class="section-intro reveal">
-          <p class="section-tag"><span>03</span> / Design principles</p>
-          <div><h2>Permission has<br>a boundary.</h2><p>The project is being built around three rules for delegating work by voice.</p></div>
+          <h2>Permission has<br>a boundary.</h2>
+          <p>Three rules for delegating work by voice.</p>
         </div>
         <div class="principle-list">
           <article class="principle reveal">
-            <span class="micro">01 /</span><h3>Show the scope.</h3><p>Give each job a clear objective and explicit limits on what it can access or change.</p><span class="principle-glyph" aria-hidden="true">⌗</span>
+            <h3>Show the scope.</h3><p>Give each job a clear objective and explicit limits on what it can access or change.</p>
           </article>
           <article class="principle reveal">
-            <span class="micro">02 /</span><h3>Keep stop close.</h3><p>Make it clear whether you are stopping speech, microphone input, or the job itself.</p><span class="principle-glyph" aria-hidden="true">⊡</span>
+            <h3>Keep stop close.</h3><p>Make it clear whether you are stopping speech, microphone input, or the job itself.</p>
           </article>
           <article class="principle reveal">
-            <span class="micro">03 /</span><h3>Leave a receipt.</h3><p>Show what ran, what changed, and how the job ended so you can check the result.</p><span class="principle-glyph" aria-hidden="true">▤</span>
+            <h3>Leave a receipt.</h3><p>Show what ran, what changed, and how the job ended so you can check the result.</p>
           </article>
         </div>
       </div>
@@ -151,12 +151,12 @@
 
     <section id="faq" class="section paper faq">
       <div class="wrap faq-grid reveal">
-        <div><p class="section-tag"><span>04</span> / Project notes</p><h2>Good to know.</h2></div>
+        <h2>Good to know.</h2>
         <div class="questions">
-          <details><summary>Can I use Super Agent today?</summary><p>The repo includes a local voice scaffold and setup instructions. Background job delegation and the controls shown here are still being developed. <a href="https://github.com/abhishek3059/super-agent/blob/develop/roadmap.md">Check the project roadmap ↗</a></p></details>
+          <details><summary>Can I use Super Agent today?</summary><p>The repo includes a local voice scaffold and setup instructions. Background job delegation and the controls shown here are still being developed. <a href="https://github.com/abhishek3059/super-agent/blob/develop/roadmap.md">Check the project roadmap <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-up-right"/></svg></a></p></details>
           <details><summary>What data does this page use?</summary><p>The walkthrough uses two fictional build reports. It has no account, microphone access, analytics, or connection to the assistant runtime.</p></details>
-          <details><summary>What does local-first mean here?</summary><p>The project aims to keep control and job state on your device. Voice data handling depends on which adapter you configure; an opted-in cloud adapter may send audio to its provider. <a href="https://github.com/abhishek3059/super-agent/blob/develop/architecture.md">Read the architecture ↗</a></p></details>
-          <details><summary>Where can I follow development?</summary><p>The repository carries the source, design decisions, and current evidence. <a href="https://github.com/abhishek3059/super-agent">Open the repository ↗</a></p></details>
+          <details><summary>What does local-first mean here?</summary><p>The project aims to keep control and job state on your device. Voice data handling depends on which adapter you configure; an opted-in cloud adapter may send audio to its provider. <a href="https://github.com/abhishek3059/super-agent/blob/develop/architecture.md">Read the architecture <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-up-right"/></svg></a></p></details>
+          <details><summary>Where can I follow development?</summary><p>The repository carries the source, design decisions, and current evidence. <a href="https://github.com/abhishek3059/super-agent">Open the repository <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-up-right"/></svg></a></p></details>
         </div>
       </div>
     </section>
@@ -165,13 +165,19 @@
   <footer class="site-footer">
     <div class="wrap">
       <div class="footer-cta reveal">
-        <p class="section-tag"><span>↳</span> / Open development</p>
         <h2>Follow the build.</h2>
-        <a class="pill primary" href="https://github.com/abhishek3059/super-agent">Explore the repository <span aria-hidden="true">↗</span></a>
+        <a class="pill primary" href="https://github.com/abhishek3059/super-agent">Explore the repository <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-up-right"/></svg></a>
       </div>
-      <div class="footer-bottom"><a class="brand" href="#top"><img src="./mark.svg" width="24" height="24" alt=""> SUPER<span>AGENT</span></a><span class="micro">Open-source project · Concept preview</span><a href="./notices.txt">Asset notices</a><a class="back-top" href="#top">Back to top <span aria-hidden="true">↑</span></a></div>
+      <div class="footer-bottom"><a class="brand" href="#top"><img src="./mark.svg" width="24" height="24" alt=""> Super Agent</a><span class="micro">Open-source project · Concept preview</span><a href="./notices.txt">Asset notices</a><a class="back-top" href="#top">Back to top <svg class="icon" aria-hidden="true" focusable="false"><use href="#arrow-up"/></svg></a></div>
     </div>
   </footer>
+  <svg class="icon-definitions" aria-hidden="true" xmlns="http://www.w3.org/2000/svg">
+    <symbol id="arrow-right" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+    <symbol id="arrow-up" viewBox="0 0 24 24"><path d="M12 19V5m-6 6 6-6 6 6"/></symbol>
+    <symbol id="arrow-up-right" viewBox="0 0 24 24"><path d="M6 18 18 6M8 6h10v10"/></symbol>
+    <symbol id="arrow-down-right" viewBox="0 0 24 24"><path d="m6 6 12 12m0-10v10H8"/></symbol>
+    <symbol id="play" viewBox="0 0 24 24"><path d="m9 5 10 7-10 7z"/></symbol>
+  </svg>
   <script type="module" src="./main.js"></script>
 </body>
 </html>
